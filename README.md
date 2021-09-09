@@ -21,9 +21,9 @@ dt dev -c dt.config.json -p 3030
 ### `start`
 
 Run local HTTP server with specified TypeScript lambda APIs.
-This command load the lambda modules only once when starting the server and won't be affected by live changes.
-While this method works statically compared to the 'dev' command it's still intended to be used locally for development only.
-It's main usage is to run the server in a more efficient way when development is focused on frontend.
+This command load the lambda API modules only once when starting the server and won't be affected by live changes.
+While this method works statically compared to the `dev` command it's still intended to be used locally for development only.
+Its main usage is to run the server in a more efficient way when development is focused on frontend and fewer changes are done to the API.
 
 **Usage:**
 
@@ -35,8 +35,13 @@ dt start -c dt.config.json -p 3030
 
 ### `package`
 
-Package an API lambda for deployment.
-Transpile the typescript files, perform tree-shaking and bundle to a single minified js file ready to be deployed to AWS.
+Create an API package ready for deployment from a TypeScript Lambda API module.
+- Transpile the typescript code
+- Perform tree-shaking
+- Exclude `aws-sdk` (included in lambda environment)
+- Bundle to a single minified JS file
+- Include additional assets (binaries that can't be bundled in the JS)
+- Package the result into a ZIP file ready to be deployed to AWS.
 
 **Usage:**
 

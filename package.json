@@ -1,12 +1,14 @@
 {
-  "name": "dev-tools",
-  "version": "0.0.1",
+  "name": "@ori-sh/dev-tools",
+  "version": "1.0.2",
   "description": "CLI for developing & packaging lambda APIs",
   "module": "dist/index.d.ts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "license": "MIT",
   "files": [ "dist" ],
+  "repository": "https://github.com/ori-shalom/dev-tools",
+  "private": false,
   "scripts": {
     "build": "tsc && chmod +x dist/index.js"
   },
