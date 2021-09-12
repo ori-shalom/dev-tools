@@ -1,6 +1,6 @@
 import { getConfig, resolveApiModulePath, resolveApiPath, saveZipFile } from './common';
 import { join, resolve, basename } from 'path';
-import { copyFile } from 'fs/promises';
+import { stat, mkdir } from 'fs/promises';
 
 /**
  * Package all TypeScript Lambda Function APIs as ready to deploy ZIP files.
@@ -25,7 +25,9 @@ export async function packageLambda({configFile, dist}: {configFile: string, dis
       externals: ['aws-sdk'] // Included in AWS Lambda
     });
     const apiName = basename(api);
-    const zipPath = join(dist ? resolve(dist) : resolveApiPath(api), `${apiName}.zip`);
+    const distFolder = join(dist ? resolve(dist) : resolveApiPath(api));
+    await mkdir(distFolder, { recursive: true });
+    const zipPath = join(distFolder, `${apiName}.zip`);
     await saveZipFile([
       { content: code, name: 'index.js', mode: 444 },
       { content: map, name: 'index.js.map', mode: 444 },
