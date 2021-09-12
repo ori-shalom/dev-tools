@@ -45,7 +45,10 @@ export async function saveZipFile(files: Array<{content: Buffer, name: string, m
   const zip = archiver('zip', {zlib: {level: 9}});
   zip.on('error', rethrow);
   zip.on('warning', console.log);
-  zip.pipe(createWriteStream(dist));
+  const fileStream = createWriteStream(dist);
+  zip.pipe(fileStream);
   files.forEach(({ content, name, mode }) => zip.append(content, { name, mode }))
+  const closed = new Promise(resolve => fileStream.on('close', resolve));
   await zip.finalize();
+  await closed;
 }
