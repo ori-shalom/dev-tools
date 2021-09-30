@@ -42,12 +42,12 @@ export function expressRequestAsLambdaEvent(request: Request): PartialDeep<APIGa
  * @param {APIGatewayProxyStructuredResultV2} result
  */
 export function sendExpressResponseFromLambdaResult(response: Response, result: APIGatewayProxyStructuredResultV2): void {
-  const { statusCode = 200, body, headers = { contentType: 'application/json' }, isBase64Encoded } = result;
+  const { statusCode = 200, body, headers = { }, isBase64Encoded } = result;
   response.status(statusCode);
-  Object.entries(headers).forEach(([key, value]) => {
+  Object.entries({ contentType: 'application/json', ...headers }).forEach(([key, value]) => {
     typeof value === 'boolean' ? response.header(key) : response.header(key, value.toString());
   })
-  body === undefined ? response.send() : response.send(isBase64Encoded ? Buffer.from(body, 'base64') : JSON.stringify(body));
+  body === undefined ? response.send() : response.send(isBase64Encoded ? Buffer.from(body, 'base64') : JSON.parse(body));
 }
 
 /**
