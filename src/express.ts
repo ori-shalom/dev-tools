@@ -1,6 +1,6 @@
 import { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { APIGatewayProxyStructuredResultV2 } from 'aws-lambda/trigger/api-gateway-proxy';
-import express, { Handler, raw, Request, Response, Router } from 'express';
+import express, { ErrorRequestHandler, Handler, raw, Request, Response, Router } from 'express';
 import { PartialDeep } from 'type-fest';
 
 
@@ -47,7 +47,7 @@ export function sendExpressResponseFromLambdaResult(response: Response, result: 
   Object.entries(headers).forEach(([key, value]) => {
     typeof value === 'boolean' ? response.header(key) : response.header(key, value.toString());
   })
-  body === undefined ? response.send() : response.send(isBase64Encoded ? Buffer.from(body, 'base64') : JSON.parse(body));
+  body === undefined ? response.send() : response.send(isBase64Encoded ? Buffer.from(body, 'base64') : JSON.stringify(body));
 }
 
 /**
@@ -58,6 +58,11 @@ export function createExpressApp(routes: Array<Router>) {
   const app = express();
   app.use(raw({ type: () => true }));
   app.use(routes);
+  const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
+    console.error(err);
+    res.status(500).send('An Internal Error of the Dev Tool Server.');
+  }
+  app.use(errorHandler);
   return app;
 }
 
