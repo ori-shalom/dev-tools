@@ -14,7 +14,7 @@ export async function start({configFile, port}: {configFile: string, port: numbe
   const config = await getConfig(configFile);
   const routes = await Promise.all(config.apis.map(async api => {
     const handler = (await import(resolveApiModulePath(api))).handler;
-    return Router().all(`/${basename(api)}*`, lambdaAsExpressHandler(handler));
+    return Router().all(`${config.basePath}/${basename(api)}(/*)?`, lambdaAsExpressHandler(handler));
   }));
   runServer(routes, port);
 }

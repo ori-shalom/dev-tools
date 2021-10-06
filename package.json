@@ -1,12 +1,14 @@
 {
   "name": "@ori-sh/dev-tools",
-  "version": "1.0.7",
+  "version": "1.0.9",
   "description": "CLI for developing & packaging lambda APIs",
   "module": "dist/index.d.ts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "license": "MIT",
-  "files": [ "dist" ],
+  "files": [
+    "dist"
+  ],
   "repository": "https://github.com/ori-shalom/dev-tools",
   "private": false,
   "scripts": {
@@ -16,15 +18,15 @@
     "dt": "dist/index.js"
   },
   "dependencies": {
-    "@vercel/ncc": "^0.30.0",
+    "@vercel/ncc": "^0.31.1",
     "archiver": "^5.3.0",
     "chalk": "^4.1.2",
     "chokidar": "^3.5.2",
     "commander": "^8.1.0",
     "express": "^4.17.1",
     "nodemon": "^2.0.12",
-    "yargs": "^17.1.1",
     "ts-node": "^10.2.1",
+    "yargs": "^17.1.1",
     "zod": "^3.8.2"
   },
   "devDependencies": {

@@ -22,6 +22,7 @@ export async function packageLambda({configFile, dist}: {configFile: string, dis
       minify: true,
       sourceMap: true,
       assetBuilds: true,
+      target: 'es2020',
       externals: ['aws-sdk'] // Included in AWS Lambda
     });
     const apiName = basename(api);

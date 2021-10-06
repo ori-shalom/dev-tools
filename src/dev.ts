@@ -37,7 +37,7 @@ export async function dev({configFile, port}: {configFile: string, port: number}
   const config = await getConfig(configFile);
   const handlers = watchedHandlers(config.apis);
   const routes = await Promise.all(config.apis.map(async api =>
-    Router().all(`/${basename(api)}(/*)?`, async (...args) => {
+    Router().all(`${config.basePath}/${basename(api)}(/*)?`, async (...args) => {
       const expressHandler = lambdaAsExpressHandler(await handlers.get(resolveApiPath(api)));
       expressHandler(...args);
     })

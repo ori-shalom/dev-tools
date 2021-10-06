@@ -26,6 +26,7 @@ export function expressRequestAsLambdaEvent(request: Request): PartialDeep<APIGa
     headers: Object.entries(request.headers).reduce((headers, [k, v]) => ({...headers, [k]: Array.isArray(v) ? v.join(';') : v}), {}),
     queryStringParameters: Object.entries(request.query).reduce((query, [k, v]) => ({...query, [k]: Array.isArray(v) ? v.join(',') : v}), {}),
     pathParameters: { proxy: request.params[0] ?? ''},
+    rawPath: request.path,
     body: request.body.toString(request.is('application/json') ? 'utf-8' : 'base64'),
     requestContext: {
       http: {
