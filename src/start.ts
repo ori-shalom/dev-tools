@@ -1,3 +1,4 @@
+import { config as loadEnvironmentVariables } from 'dotenv';
 import { Router } from 'express';
 import { basename } from 'path';
 import { getConfig, resolveApiModulePath } from './common';
@@ -11,6 +12,7 @@ import { lambdaAsExpressHandler, runServer } from './express';
  * @returns {Promise<void>}
  */
 export async function start({configFile, port}: {configFile: string, port: number}) {
+  loadEnvironmentVariables();
   const config = await getConfig(configFile);
   const routes = await Promise.all(config.apis.map(async api => {
     const handler = (await import(resolveApiModulePath(api))).handler;
