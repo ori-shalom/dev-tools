@@ -2,6 +2,7 @@ import { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { APIGatewayProxyStructuredResultV2 } from 'aws-lambda/trigger/api-gateway-proxy';
 import express, { ErrorRequestHandler, Handler, raw, Request, Response, Router } from 'express';
 import { PartialDeep } from 'type-fest';
+import { decode } from 'jsonwebtoken';
 
 
 /**
@@ -21,6 +22,8 @@ export function lambdaAsExpressHandler(lambdaHandler: (event: PartialDeep<APIGat
  * @return {{isBase64Encoded: boolean, headers: any, pathParameters: {proxy: any}, requestContext: {http: {path: string, method: string}}, queryStringParameters: any, body: string}}
  */
 export function expressRequestAsLambdaEvent(request: Request): PartialDeep<APIGatewayProxyEventV2> {
+const { token } = request.headers.authorization?.match(/^Bearer (?<token>.*)$/)?.groups ?? {};
+const claims = token ? decode(token, { json: true }) ?? {} : {}
   return {
     isBase64Encoded: !request.is('application/json'),
     headers: Object.entries(request.headers).reduce((headers, [k, v]) => ({...headers, [k]: Array.isArray(v) ? v.join(';') : v}), {}),
@@ -29,6 +32,9 @@ export function expressRequestAsLambdaEvent(request: Request): PartialDeep<APIGa
     rawPath: request.path,
     body: request.body.toString(request.is('application/json') ? 'utf-8' : 'base64'),
     requestContext: {
+      authorizer: {
+        jwt: { claims }
+      },
       http: {
         method: request.method.toUpperCase(),
         path: request.path
