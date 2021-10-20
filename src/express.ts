@@ -22,8 +22,13 @@ export function lambdaAsExpressHandler(lambdaHandler: (event: PartialDeep<APIGat
  * @return {{isBase64Encoded: boolean, headers: any, pathParameters: {proxy: any}, requestContext: {http: {path: string, method: string}}, queryStringParameters: any, body: string}}
  */
 export function expressRequestAsLambdaEvent(request: Request): PartialDeep<APIGatewayProxyEventV2> {
-const { token } = request.headers.authorization?.match(/^Bearer (?<token>.*)$/)?.groups ?? {};
-const claims = token ? decode(token, { json: true }) ?? {} : {}
+  const { token } = request.headers.authorization?.match(/^Bearer (?<token>.*)$/)?.groups ?? {};
+  const rawClaims = token ? decode(token, { json: true }) ?? {} : {}
+  const claims = {
+    ...rawClaims,
+    ...(rawClaims?.['cognito:groups'] ? { ['cognito:groups']: '['+rawClaims?.['cognito:groups'].join(' ')+']' } : {}),
+    ...Object.entries(rawClaims ?? {}).filter(([,value]) => typeof value === 'boolean').reduce((c, [key, value]) => ({...c, [key]: String(value)}), {})
+  }
   return {
     isBase64Encoded: !request.is('application/json'),
     headers: Object.entries(request.headers).reduce((headers, [k, v]) => ({...headers, [k]: Array.isArray(v) ? v.join(';') : v}), {}),
