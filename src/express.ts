@@ -1,4 +1,4 @@
-import { APIGatewayProxyEventV2 } from 'aws-lambda';
+import {APIGatewayProxyEventV2, APIGatewayProxyEventV2WithJWTAuthorizer} from 'aws-lambda';
 import { APIGatewayProxyStructuredResultV2 } from 'aws-lambda/trigger/api-gateway-proxy';
 import express, { ErrorRequestHandler, Handler, raw, Request, Response, Router } from 'express';
 import { PartialDeep } from 'type-fest';
@@ -21,7 +21,7 @@ export function lambdaAsExpressHandler(lambdaHandler: (event: PartialDeep<APIGat
  * @param request
  * @return {{isBase64Encoded: boolean, headers: any, pathParameters: {proxy: any}, requestContext: {http: {path: string, method: string}}, queryStringParameters: any, body: string}}
  */
-export function expressRequestAsLambdaEvent(request: Request): PartialDeep<APIGatewayProxyEventV2> {
+export function expressRequestAsLambdaEvent(request: Request): PartialDeep<APIGatewayProxyEventV2WithJWTAuthorizer> {
   const { token } = request.headers.authorization?.match(/^Bearer (?<token>.*)$/)?.groups ?? {};
   const rawClaims = token ? decode(token, { json: true }) ?? {} : {}
   const claims = {

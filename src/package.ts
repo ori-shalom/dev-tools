@@ -1,6 +1,6 @@
-import { getConfig, resolveApiModulePath, resolveApiPath, saveZipFile } from './common';
-import { join, resolve, basename } from 'path';
-import { stat, mkdir } from 'fs/promises';
+import {getConfig, resolveApiModulePath, resolveApiPath, saveZipFile} from './common';
+import {basename, join, resolve} from 'path';
+import {mkdir} from 'fs/promises';
 
 /**
  * Package all TypeScript Lambda Function APIs as ready to deploy ZIP files.
