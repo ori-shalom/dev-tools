@@ -1,16 +1,16 @@
 {
-  "name": "lambda-dev-tools",
-  "version": "0.1.0",
+  "name": "@ori-sh/dev-tools",
+  "version": "2.0.0",
   "type": "module",
   "description": "Lightweight AWS Lambda local development and packaging tool",
   "main": "dist/index.js",
   "bin": {
-    "lambda-dev": "dist/cli/index.js"
+    "dt": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/cli/index.ts",
-    "lint": "eslint .",
+    "lint": "eslint . && prettier --check .",
     "format": "prettier --write src",
     "type-check": "tsc --noEmit",
     "test": "jest",
@@ -28,6 +28,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "archiver": "^7.0.1",
     "chokidar": "^3.5.3",
     "commander": "^11.1.0",
     "cors": "^2.8.5",
@@ -39,18 +40,19 @@
     "zod": "^4.0.17"
   },
   "devDependencies": {
+    "@eslint/js": "^9.29.0",
+    "@types/archiver": "^6.0.3",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/node": "^22.13.10",
     "@types/ws": "^8.18.1",
-    "typescript-eslint": "^8.40.0",
-    "@eslint/js": "^9.29.0",
     "eslint": "^9.33.0",
     "eslint-config-prettier": "^9.0.0",
     "globals": "^15.15.0",
     "prettier": "^3.6.2",
     "tsx": "^4.20.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.40.0"
   },
   "engines": {
     "node": ">=18.0.0"

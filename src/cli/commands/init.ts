@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, join } from 'path';
-import { generateJsonSchema } from '../../config/generate-schema.js';
+import { toJSONSchema } from 'zod';
+import { ConfigSchema } from '../../config/schema.js';
 
 export function createInitCommand(): Command {
   const command = new Command('init');
@@ -44,7 +45,13 @@ async function runInitCommand(options: InitOptions): Promise<void> {
     console.log('✓ Created directory structure');
 
     // Generate JSON schema
-    generateJsonSchema();
+    const jsonSchema = toJSONSchema(ConfigSchema, {
+      // We want the schema represent valid input values (allow optional fields) not the output values (with marked as required due to the default values)
+      io: 'input',
+    });
+    const schemaPath = join(workingDir, 'schemas', 'config-schema.json');
+    mkdirSync(join(workingDir, 'schemas'), { recursive: true });
+    writeFileSync(schemaPath, JSON.stringify(jsonSchema, null, 2));
     console.log('✓ Generated JSON schema for YAML IntelliSense');
 
     // Create example configuration

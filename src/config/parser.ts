@@ -6,7 +6,7 @@ import { ZodError } from 'zod';
 export class ConfigValidationError extends Error {
   constructor(
     message: string,
-    public readonly errors: ZodError['errors'],
+    public readonly errors: ZodError['issues'],
   ) {
     super(message);
     this.name = 'ConfigValidationError';
@@ -45,8 +45,8 @@ export class ConfigParser {
       const result = ConfigSchema.safeParse(rawConfig);
 
       if (!result.success) {
-        const errorMessage = this.formatValidationErrors(result.error.errors, filePath);
-        throw new ConfigValidationError(errorMessage, result.error.errors);
+        const errorMessage = this.formatValidationErrors(result.error.issues, filePath);
+        throw new ConfigValidationError(errorMessage, result.error.issues);
       }
 
       return result.data;
@@ -66,7 +66,7 @@ export class ConfigParser {
   /**
    * Format validation errors for human-readable output
    */
-  private static formatValidationErrors(errors: ZodError['errors'], filePath: string): string {
+  private static formatValidationErrors(errors: ZodError['issues'], filePath: string): string {
     const formattedErrors = errors.map((error) => {
       const path = error.path.length > 0 ? error.path.join('.') : 'root';
       return `  - ${path}: ${error.message}`;
@@ -78,13 +78,13 @@ export class ConfigParser {
   /**
    * Validate configuration without throwing
    */
-  static validate(config: unknown): { valid: true; config: Config } | { valid: false; errors: ZodError['errors'] } {
+  static validate(config: unknown): { valid: true; config: Config } | { valid: false; errors: ZodError['issues'] } {
     const result = ConfigSchema.safeParse(config);
 
     if (result.success) {
       return { valid: true, config: result.data };
     }
 
-    return { valid: false, errors: result.error.errors };
+    return { valid: false, errors: result.error.issues };
   }
 }

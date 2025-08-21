@@ -2,25 +2,29 @@
 
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { createDevCommand } from './commands/dev.js';
+import { createBuildCommand } from './commands/build.js';
+import { createPreviewCommand } from './commands/preview.js';
 import { createPackageCommand } from './commands/package.js';
 import { createInitCommand } from './commands/init.js';
 
 // Get package.json for version info
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 const packageJsonPath = resolve(__dirname, '../../package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 
 const program = new Command();
 
-program
-  .name('lambda-dev')
-  .description('Lightweight AWS Lambda local development and packaging tool')
-  .version(packageJson.version);
+program.name('dt').description('CLI for developing & packaging lambda APIs').version(packageJson.version);
 
 // Add commands
 program.addCommand(createInitCommand());
 program.addCommand(createDevCommand());
+program.addCommand(createBuildCommand());
+program.addCommand(createPreviewCommand());
 program.addCommand(createPackageCommand());
 
 // Add global error handling

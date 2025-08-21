@@ -1,6 +1,7 @@
-import { createWriteStream, statSync, readdirSync, readFileSync } from 'fs';
+import { createWriteStream } from 'fs';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
+import archiver from 'archiver';
 import { BundleResult } from './esbuild-bundler.js';
 
 export type PackageOptions = {
@@ -19,68 +20,42 @@ export class ZipPackager {
   async packageFunction(options: PackageOptions): Promise<PackageResult> {
     const { bundleResult, workingDir, outputDir } = options;
 
-    // For now, we'll create a simple tar-like structure
-    // In a production version, you'd want to use a proper ZIP library
-
     // Determine output directory
     const packageOutputDir = outputDir || join(workingDir, 'lambda-packages');
     mkdirSync(packageOutputDir, { recursive: true });
 
-    // For simplicity, we'll just copy the main handler file
-    // In production, you'd create a proper ZIP archive
-    const packagePath = join(packageOutputDir, bundleResult.functionName);
-    mkdirSync(packagePath, { recursive: true });
+    // Create ZIP file path
+    const zipPath = join(packageOutputDir, `${bundleResult.functionName}.zip`);
 
-    // Copy all files from bundle output
-    await this.copyDirectory(bundleResult.outputPath, packagePath);
+    // Create a file to stream archive data to
+    const output = createWriteStream(zipPath);
+    const archive = archiver('zip', {
+      zlib: { level: 9 }, // Maximum compression
+    });
 
-    // Create a marker file for the zip (simplified approach)
-    const zipPath = `${packagePath}.zip`;
+    // Return a promise that resolves when the archive is finalized
+    return new Promise((resolve, reject) => {
+      output.on('close', () => {
+        const size = archive.pointer();
+        resolve({
+          functionName: bundleResult.functionName,
+          zipPath,
+          size,
+        });
+      });
 
-    // Calculate size (simplified)
-    const size = this.calculateDirectorySize(packagePath);
+      output.on('error', reject);
+      archive.on('error', reject);
 
-    return {
-      functionName: bundleResult.functionName,
-      zipPath,
-      size,
-    };
-  }
+      // Pipe archive data to the file
+      archive.pipe(output);
 
-  private async copyDirectory(source: string, destination: string): Promise<void> {
-    mkdirSync(destination, { recursive: true });
+      // Add the entire bundled output directory to the archive
+      archive.directory(bundleResult.outputPath, false);
 
-    const items = readdirSync(source, { withFileTypes: true });
-
-    for (const item of items) {
-      const sourcePath = join(source, item.name);
-      const destPath = join(destination, item.name);
-
-      if (item.isDirectory()) {
-        await this.copyDirectory(sourcePath, destPath);
-      } else {
-        const content = readFileSync(sourcePath);
-        createWriteStream(destPath).write(content);
-      }
-    }
-  }
-
-  private calculateDirectorySize(dirPath: string): number {
-    let totalSize = 0;
-
-    const items = readdirSync(dirPath, { withFileTypes: true });
-
-    for (const item of items) {
-      const fullPath = join(dirPath, item.name);
-
-      if (item.isDirectory()) {
-        totalSize += this.calculateDirectorySize(fullPath);
-      } else {
-        totalSize += statSync(fullPath).size;
-      }
-    }
-
-    return totalSize;
+      // Finalize the archive
+      archive.finalize();
+    });
   }
 
   async packageAll(bundleResults: BundleResult[], workingDir: string, outputDir?: string): Promise<PackageResult[]> {

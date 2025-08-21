@@ -1,0 +1,74 @@
+name: Build & Publish Package
+
+on:
+  push:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run type checking
+        run: pnpm run type-check
+
+      - name: Run linting
+        run: pnpm run lint
+
+      - name: Build package
+        run: pnpm run build
+
+      - name: Test package commands
+        run: |
+          # Test init command
+          node dist/cli/index.js init --help
+
+          # Test dev command
+          node dist/cli/index.js dev --help
+
+          # Test build command
+          node dist/cli/index.js build --help
+
+          # Test preview command
+          node dist/cli/index.js preview --help
+
+          # Test package command
+          node dist/cli/index.js package --help
+
+      - name: Check if version changed
+        if: github.ref == 'refs/heads/main'
+        id: version-check
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          NPM_VERSION=$(npm view @ori-sh/dev-tools version 2>/dev/null || echo "0.0.0")
+
+          if [ "$PACKAGE_VERSION" != "$NPM_VERSION" ]; then
+            echo "NEW_VERSION=true" >> $GITHUB_OUTPUT
+            echo "Version changed from $NPM_VERSION to $PACKAGE_VERSION"
+          else
+            echo "NEW_VERSION=false" >> $GITHUB_OUTPUT
+            echo "Version unchanged: $PACKAGE_VERSION"
+          fi
+
+      - name: Publish to NPM
+        if: github.ref == 'refs/heads/main' && steps.version-check.outputs.NEW_VERSION == 'true'
+        run: pnpm publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
