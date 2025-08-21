@@ -229,12 +229,12 @@ export async function handler(
     console.log('🎉 Project initialized successfully!');
     console.log('');
     console.log('Next steps:');
-    console.log('1. Install dependencies: npm install');
-    console.log('2. Start development server: npm run dev');
+    console.log('1. Install dependencies: pnpm install');
+    console.log('2. Start development server: pnpm run dev');
     console.log('3. Test your functions:');
     console.log('   - HTTP: curl http://localhost:3000/hello');
     console.log('   - WebSocket: Connect to ws://localhost:3001');
-    console.log('4. Package for deployment: npm run package');
+    console.log('4. Package for deployment: pnpm run package');
     console.log('');
     console.log('📄 Configuration file: lambda-dev.yml');
     console.log('📁 Handler files: src/handlers/');

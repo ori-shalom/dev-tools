@@ -19,7 +19,7 @@ A lightweight AWS Lambda local development and packaging tool for TypeScript pro
 ### Installation
 
 ```bash
-npm install lambda-dev-tools --save-dev
+pnpm add lambda-dev-tools --save-dev
 ```
 
 ### Initialize a New Project
@@ -36,17 +36,17 @@ This creates:
 ### Start Development Server
 
 ```bash
-npm run dev
+pnpm run dev
 # or
-npx lambda-dev dev
+pnpm exec lambda-dev dev
 ```
 
 ### Package Functions
 
 ```bash
-npm run package
+pnpm run package
 # or
-npx lambda-dev package
+pnpm exec lambda-dev package
 ```
 
 ## Configuration

@@ -38,16 +38,16 @@ Lambda Dev Tools is a lightweight AWS Lambda local development and packaging too
 
 ```bash
 # Development
-npm run dev          # Watch and compile TypeScript
-npm run build        # Build the project
-npm run lint         # ESLint code checking  
-npm run format       # Prettier code formatting
-npm run type-check   # TypeScript type checking
+pnpm run dev          # Watch and compile TypeScript
+pnpm run build        # Build the project
+pnpm run lint         # ESLint code checking  
+pnpm run format       # Prettier code formatting
+pnpm run type-check   # TypeScript type checking
 
 # Testing the CLI locally
-npm run build && node dist/cli/index.js init
-npm run build && node dist/cli/index.js dev
-npm run build && node dist/cli/index.js package
+pnpm run build && node dist/cli/index.js init
+pnpm run build && node dist/cli/index.js dev
+pnpm run build && node dist/cli/index.js package
 ```
 
 ## Important Implementation Details
