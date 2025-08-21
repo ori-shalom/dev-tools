@@ -11,7 +11,7 @@
     "build": "tsc",
     "dev": "tsx watch src/cli/index.ts",
     "lint": "eslint . && prettier --check .",
-    "format": "prettier --write src",
+    "format": "prettier --write .",
     "type-check": "tsc --noEmit",
     "test": "jest",
     "generate-schema": "tsx src/config/generate-schema.ts",

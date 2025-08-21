@@ -1,12 +1,14 @@
 import { exec as execWithCallback } from 'node:child_process';
 import { json } from 'node:stream/consumers';
+import { stdin, env, exit } from 'node:process';
+import { error } from 'node:console';
 
-const data = await json(process.stdin);
+const data = await json(stdin);
 
 const file = data.tool_input.file_path;
 
-const prettier = `${process.env.CLAUDE_PROJECT_DIR}/node_modules/.bin/prettier`;
-const eslint = `${process.env.CLAUDE_PROJECT_DIR}/node_modules/.bin/eslint`;
+const prettier = `${env.CLAUDE_PROJECT_DIR}/node_modules/.bin/prettier`;
+const eslint = `${env.CLAUDE_PROJECT_DIR}/node_modules/.bin/eslint`;
 
 function exec(command) {
   return new Promise((resolve) => {
@@ -22,14 +24,14 @@ function exec(command) {
 
 const prettierCheck = await exec(`${prettier} --check ${file}`);
 if (prettierCheck.exitCode !== 0) {
-  console.error('File contains formatting errors. Auto-formatting...');
+  error('File contains formatting errors. Auto-formatting...');
   await exec(`${prettier} --write ${file}`);
-  console.error('File auto-formatted.');
+  error('File auto-formatted.');
 }
 
 const eslintCheck = await exec(`${eslint} ${file} --max-warnings 0`);
 if (eslintCheck.exitCode !== 0) {
-  console.error('File has linting errors.');
-  console.error(eslintCheck.stdout);
-  process.exit(2);
+  error('File has linting errors.');
+  error(eslintCheck.stdout);
+  exit(2);
 }
