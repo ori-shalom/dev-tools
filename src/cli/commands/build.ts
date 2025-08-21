@@ -9,7 +9,7 @@ export function createBuildCommand(): Command {
 
   command
     .description('Build Lambda functions without packaging')
-    .option('-c, --config <path>', 'Configuration file path', 'lambda-dev.yml')
+    .option('-c, --config <path>', 'Configuration file path', 'dev-tools.yaml')
     .option('--no-minify', 'Disable code minification')
     .option('--sourcemap', 'Generate source maps')
     .option('-f, --function <name>', 'Build specific function only')
@@ -32,7 +32,7 @@ async function runBuildCommand(options: BuildOptions): Promise<void> {
 
   if (!existsSync(configPath)) {
     console.error(`Configuration file not found: ${configPath}`);
-    console.log('Create a lambda-dev.yml file or specify a different path with --config');
+    console.log('Create a dev-tools.yaml file or specify a different path with --config');
     process.exit(1);
   }
 

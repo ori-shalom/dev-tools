@@ -10,7 +10,7 @@ export function createPackageCommand(): Command {
 
   command
     .description('Build and package Lambda functions')
-    .option('-c, --config <path>', 'Configuration file path', 'lambda-dev.yml')
+    .option('-c, --config <path>', 'Configuration file path', 'dev-tools.yaml')
     .option('-o, --output <dir>', 'Output directory for packages', 'lambda-packages')
     .option('--no-minify', 'Disable code minification')
     .option('--sourcemap', 'Generate source maps')
@@ -35,7 +35,7 @@ async function runPackageCommand(options: PackageOptions): Promise<void> {
 
   if (!existsSync(configPath)) {
     console.error(`Configuration file not found: ${configPath}`);
-    console.log('Create a lambda-dev.yml file or specify a different path with --config');
+    console.log('Create a dev-tools.yaml file or specify a different path with --config');
     process.exit(1);
   }
 

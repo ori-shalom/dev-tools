@@ -10,7 +10,7 @@ export class HandlerLoader {
   private tempDir: string;
 
   constructor() {
-    this.tempDir = join(tmpdir(), 'lambda-dev-tools', Date.now().toString());
+    this.tempDir = join(tmpdir(), '@ori-sh/dev-tools', Date.now().toString());
     mkdirSync(this.tempDir, { recursive: true });
   }
 

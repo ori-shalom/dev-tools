@@ -14,7 +14,7 @@ export function createDevCommand(): Command {
 
   command
     .description('Start local development server')
-    .option('-c, --config <path>', 'Configuration file path', 'lambda-dev.yml')
+    .option('-c, --config <path>', 'Configuration file path', 'dev-tools.yaml')
     .option('-p, --port <port>', 'HTTP server port', '3000')
     .option('-w, --websocket-port <port>', 'WebSocket server port', '3001')
     .option('--no-watch', 'Disable file watching')
@@ -37,7 +37,7 @@ async function runDevServer(options: DevOptions): Promise<void> {
 
   if (!existsSync(configPath)) {
     console.error(`Configuration file not found: ${configPath}`);
-    console.log('Create a lambda-dev.yml file or specify a different path with --config');
+    console.log('Create a dev-tools.yaml file or specify a different path with --config');
     process.exit(1);
   }
 
@@ -63,12 +63,14 @@ async function runDevServer(options: DevOptions): Promise<void> {
     // Initialize servers
     const httpServer = new HttpServer({
       config,
-      loadHandler: (handlerPath: string) => handlerLoader.loadHandler(handlerPath, process.cwd()) as Promise<HttpHandler>,
+      loadHandler: (handlerPath: string) =>
+        handlerLoader.loadHandler(handlerPath, process.cwd()) as Promise<HttpHandler>,
     });
 
     const websocketServer = new LambdaWebSocketServer({
       config,
-      loadHandler: (handlerPath: string) => handlerLoader.loadHandler(handlerPath, process.cwd()) as Promise<WebSocketHandler>,
+      loadHandler: (handlerPath: string) =>
+        handlerLoader.loadHandler(handlerPath, process.cwd()) as Promise<WebSocketHandler>,
     });
 
     const managementServer = new ManagementServer({

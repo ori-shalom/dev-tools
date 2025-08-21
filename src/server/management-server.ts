@@ -70,7 +70,7 @@ export class ManagementServer {
       res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        service: 'lambda-dev-tools-management',
+        service: '@ori-sh/dev-tools-management',
       });
     });
   }

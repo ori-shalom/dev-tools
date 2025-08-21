@@ -35,21 +35,16 @@ jobs:
       - name: Build package
         run: pnpm run build
 
-      - name: Test package commands
+      - name: Test CLI commands
         run: |
-          # Test init command
+          # Test help
+          node dist/cli/index.js --help
+
+          # Test all commands
           node dist/cli/index.js init --help
-
-          # Test dev command
           node dist/cli/index.js dev --help
-
-          # Test build command
           node dist/cli/index.js build --help
-
-          # Test preview command
           node dist/cli/index.js preview --help
-
-          # Test package command
           node dist/cli/index.js package --help
 
       - name: Check if version changed

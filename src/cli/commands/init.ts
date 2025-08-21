@@ -8,7 +8,7 @@ export function createInitCommand(): Command {
   const command = new Command('init');
 
   command
-    .description('Initialize a new lambda-dev-tools project')
+    .description('Initialize a new dev-tools project')
     .option('-f, --force', 'Overwrite existing files')
     .option('--service <name>', 'Service name', 'my-lambda-service')
     .action(async (options) => {
@@ -25,16 +25,16 @@ type InitOptions = {
 
 async function runInitCommand(options: InitOptions): Promise<void> {
   const workingDir = process.cwd();
-  const configPath = resolve(workingDir, 'lambda-dev.yml');
+  const configPath = resolve(workingDir, 'dev-tools.yaml');
   const srcDir = resolve(workingDir, 'src');
   const handlersDir = resolve(srcDir, 'handlers');
 
   try {
-    console.log('🚀 Initializing lambda-dev-tools project...');
+    console.log('🚀 Initializing dev-tools project...');
 
     // Check if config already exists
     if (existsSync(configPath) && !options.force) {
-      console.error('Configuration file already exists: lambda-dev.yml');
+      console.error('Configuration file already exists: dev-tools.yaml');
       console.log('Use --force to overwrite existing files');
       process.exit(1);
     }
@@ -55,7 +55,7 @@ async function runInitCommand(options: InitOptions): Promise<void> {
     console.log('✓ Generated JSON schema for YAML IntelliSense');
 
     // Create example configuration
-    const exampleConfig = `# yaml-language-server: $schema=./node_modules/lambda-dev-tools/schemas/config-schema.json
+    const exampleConfig = `# yaml-language-server: $schema=./node_modules/@ori-sh/dev-tools/schemas/config-schema.json
 
 service: ${options.service}
 
@@ -99,10 +99,10 @@ build:
 `;
 
     writeFileSync(configPath, exampleConfig);
-    console.log('✓ Created lambda-dev.yml configuration');
+    console.log('✓ Created dev-tools.yaml configuration');
 
     // Create example HTTP handler
-    const httpHandlerCode = `import { ApiGatewayHttpEvent, ApiGatewayHttpResponse, LambdaContext } from 'lambda-dev-tools';
+    const httpHandlerCode = `import { ApiGatewayHttpEvent, ApiGatewayHttpResponse, LambdaContext } from '@ori-sh/dev-tools';
 
 export async function handler(
   event: ApiGatewayHttpEvent,
@@ -157,7 +157,7 @@ export async function handler(
     console.log('✓ Created example HTTP handler');
 
     // Create example WebSocket handler
-    const wsHandlerCode = `import { WebSocketEvent, WebSocketResponse, LambdaContext } from 'lambda-dev-tools';
+    const wsHandlerCode = `import { WebSocketEvent, WebSocketResponse, LambdaContext } from '@ori-sh/dev-tools';
 
 export async function handler(
   event: WebSocketEvent,
@@ -210,20 +210,20 @@ export async function handler(
       console.log('📦 Add these scripts to your package.json:');
       console.log('');
       console.log('"scripts": {');
-      console.log('  "dev": "lambda-dev dev",');
-      console.log('  "package": "lambda-dev package"');
+      console.log('  "dev": "dt dev",');
+      console.log('  "package": "dt package"');
       console.log('}');
     } else {
       const packageJson = {
         name: options.service,
         version: '1.0.0',
-        description: 'Lambda functions built with lambda-dev-tools',
+        description: 'Lambda functions built with @ori-sh/dev-tools',
         scripts: {
-          dev: 'lambda-dev dev',
-          package: 'lambda-dev package',
+          dev: 'dt dev',
+          package: 'dt package',
         },
         devDependencies: {
-          'lambda-dev-tools': '^0.1.0',
+          '@ori-sh/dev-tools': '^2.0.0',
           typescript: '^5.0.0',
         },
       };
@@ -243,7 +243,7 @@ export async function handler(
     console.log('   - WebSocket: Connect to ws://localhost:3001');
     console.log('4. Package for deployment: pnpm run package');
     console.log('');
-    console.log('📄 Configuration file: lambda-dev.yml');
+    console.log('📄 Configuration file: dev-tools.yaml');
     console.log('📁 Handler files: src/handlers/');
     console.log('');
   } catch (error) {

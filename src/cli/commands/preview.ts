@@ -12,7 +12,7 @@ export function createPreviewCommand(): Command {
 
   command
     .description('Preview built Lambda functions without hot reload')
-    .option('-c, --config <path>', 'Configuration file path', 'lambda-dev.yml')
+    .option('-c, --config <path>', 'Configuration file path', 'dev-tools.yaml')
     .option('-p, --port <number>', 'HTTP server port', '3000')
     .option('-w, --ws-port <number>', 'WebSocket server port', '3001')
     .option('-m, --mgmt-port <number>', 'Management server port', '3002')
@@ -37,7 +37,7 @@ async function runPreviewCommand(options: PreviewOptions): Promise<void> {
 
   if (!existsSync(configPath)) {
     console.error(`Configuration file not found: ${configPath}`);
-    console.log('Create a lambda-dev.yml file or specify a different path with --config');
+    console.log('Create a dev-tools.yaml file or specify a different path with --config');
     process.exit(1);
   }
 
@@ -49,7 +49,7 @@ async function runPreviewCommand(options: PreviewOptions): Promise<void> {
     // Check if build directory exists
     if (!existsSync(buildDir)) {
       console.error(`Build directory not found: ${buildDir}`);
-      console.log('Run "lambda-dev build" first to create the build artifacts');
+      console.log('Run "dt build" first to create the build artifacts');
       process.exit(1);
     }
 
