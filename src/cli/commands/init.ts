@@ -1,0 +1,250 @@
+import { Command } from 'commander';
+import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import { resolve, join } from 'path';
+import { generateJsonSchema } from '../../config/generate-schema.js';
+
+export function createInitCommand(): Command {
+  const command = new Command('init');
+
+  command
+    .description('Initialize a new lambda-dev-tools project')
+    .option('-f, --force', 'Overwrite existing files')
+    .option('--service <name>', 'Service name', 'my-lambda-service')
+    .action(async (options) => {
+      await runInitCommand(options);
+    });
+
+  return command;
+}
+
+type InitOptions = {
+  force?: boolean;
+  service: string;
+};
+
+async function runInitCommand(options: InitOptions): Promise<void> {
+  const workingDir = process.cwd();
+  const configPath = resolve(workingDir, 'lambda-dev.yml');
+  const srcDir = resolve(workingDir, 'src');
+  const handlersDir = resolve(srcDir, 'handlers');
+
+  try {
+    console.log('🚀 Initializing lambda-dev-tools project...');
+
+    // Check if config already exists
+    if (existsSync(configPath) && !options.force) {
+      console.error('Configuration file already exists: lambda-dev.yml');
+      console.log('Use --force to overwrite existing files');
+      process.exit(1);
+    }
+
+    // Create directories
+    mkdirSync(srcDir, { recursive: true });
+    mkdirSync(handlersDir, { recursive: true });
+    console.log('✓ Created directory structure');
+
+    // Generate JSON schema
+    generateJsonSchema();
+    console.log('✓ Generated JSON schema for YAML IntelliSense');
+
+    // Create example configuration
+    const exampleConfig = `# yaml-language-server: $schema=./node_modules/lambda-dev-tools/schemas/config-schema.json
+
+service: ${options.service}
+
+functions:
+  hello:
+    handler: src/handlers/hello.handler
+    events:
+      - type: http
+        method: GET
+        path: /hello
+        cors: true
+      - type: http
+        method: POST
+        path: /hello/{name}
+        cors: true
+
+  websocket:
+    handler: src/handlers/websocket.handler
+    events:
+      - type: websocket
+        route: $connect
+      - type: websocket
+        route: $disconnect
+      - type: websocket
+        route: message
+
+server:
+  port: 3000
+  host: localhost
+  cors: true
+  websocket:
+    port: 3001
+    pingInterval: 30000
+
+build:
+  outDir: ./dist
+  target: node18
+  minify: true
+  sourcemap: false
+  external: []
+`;
+
+    writeFileSync(configPath, exampleConfig);
+    console.log('✓ Created lambda-dev.yml configuration');
+
+    // Create example HTTP handler
+    const httpHandlerCode = `import { ApiGatewayHttpEvent, ApiGatewayHttpResponse, LambdaContext } from 'lambda-dev-tools';
+
+export async function handler(
+  event: ApiGatewayHttpEvent,
+  context: LambdaContext
+): Promise<ApiGatewayHttpResponse> {
+  console.log('HTTP Event:', JSON.stringify(event, null, 2));
+  console.log('Context:', JSON.stringify(context, null, 2));
+
+  const { httpMethod, path, pathParameters, queryStringParameters } = event;
+
+  if (httpMethod === 'GET') {
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: 'Hello from Lambda!',
+        path,
+        timestamp: new Date().toISOString(),
+      }),
+    };
+  }
+
+  if (httpMethod === 'POST' && pathParameters?.name) {
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: \`Hello, \${pathParameters.name}!\`,
+        path,
+        timestamp: new Date().toISOString(),
+      }),
+    };
+  }
+
+  return {
+    statusCode: 404,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: 'Not found',
+    }),
+  };
+}
+`;
+
+    writeFileSync(join(handlersDir, 'hello.ts'), httpHandlerCode);
+    console.log('✓ Created example HTTP handler');
+
+    // Create example WebSocket handler
+    const wsHandlerCode = `import { WebSocketEvent, WebSocketResponse, LambdaContext } from 'lambda-dev-tools';
+
+export async function handler(
+  event: WebSocketEvent,
+  context: LambdaContext
+): Promise<WebSocketResponse | void> {
+  console.log('WebSocket Event:', JSON.stringify(event, null, 2));
+  console.log('Context:', JSON.stringify(context, null, 2));
+
+  const { routeKey, eventType, connectionId } = event.requestContext;
+
+  switch (routeKey) {
+    case '$connect':
+      console.log(\`Client connected: \${connectionId}\`);
+      return {
+        statusCode: 200,
+      };
+
+    case '$disconnect':
+      console.log(\`Client disconnected: \${connectionId}\`);
+      return {
+        statusCode: 200,
+      };
+
+    case 'message':
+      console.log(\`Message from \${connectionId}: \${event.body}\`);
+      
+      // Echo the message back (in a real app, you'd use the management API)
+      console.log('Echo message:', event.body);
+      
+      return {
+        statusCode: 200,
+      };
+
+    default:
+      console.log(\`Unknown route: \${routeKey}\`);
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'Unknown route' }),
+      };
+  }
+}
+`;
+
+    writeFileSync(join(handlersDir, 'websocket.ts'), wsHandlerCode);
+    console.log('✓ Created example WebSocket handler');
+
+    // Create package.json scripts
+    const packageJsonPath = resolve(workingDir, 'package.json');
+    if (existsSync(packageJsonPath)) {
+      console.log('📦 Add these scripts to your package.json:');
+      console.log('');
+      console.log('"scripts": {');
+      console.log('  "dev": "lambda-dev dev",');
+      console.log('  "package": "lambda-dev package"');
+      console.log('}');
+    } else {
+      const packageJson = {
+        name: options.service,
+        version: '1.0.0',
+        description: 'Lambda functions built with lambda-dev-tools',
+        scripts: {
+          dev: 'lambda-dev dev',
+          package: 'lambda-dev package',
+        },
+        devDependencies: {
+          'lambda-dev-tools': '^0.1.0',
+          typescript: '^5.0.0',
+        },
+      };
+
+      writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+      console.log('✓ Created package.json');
+    }
+
+    console.log('');
+    console.log('🎉 Project initialized successfully!');
+    console.log('');
+    console.log('Next steps:');
+    console.log('1. Install dependencies: npm install');
+    console.log('2. Start development server: npm run dev');
+    console.log('3. Test your functions:');
+    console.log('   - HTTP: curl http://localhost:3000/hello');
+    console.log('   - WebSocket: Connect to ws://localhost:3001');
+    console.log('4. Package for deployment: npm run package');
+    console.log('');
+    console.log('📄 Configuration file: lambda-dev.yml');
+    console.log('📁 Handler files: src/handlers/');
+    console.log('');
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(`Failed to initialize project: ${error.message}`);
+    } else {
+      console.error('Failed to initialize project:', error);
+    }
+    process.exit(1);
+  }
+}
