@@ -4,28 +4,34 @@ A lightweight AWS Lambda local development and packaging tool for TypeScript pro
 
 ## Features
 
-- 🚀 **Local Development Server** - Simulates AWS API Gateway HTTP and WebSocket events
+- 🚀 **Focus on Development** - Built exclusively for local development, doesn't touch your production deployment or runtime
+- 🔐 **No AWS Required** - No AWS credentials, accounts, or intrusive setup needed
 - 🔄 **Hot Reload** - Automatic code reloading during development
-- 📦 **Function Packaging** - Build and zip Lambda functions for deployment
-- 🔧 **TypeScript First** - Full TypeScript support with type safety
-- 📝 **YAML Configuration** - Simple YAML config with IntelliSense support
-- 🌐 **WebSocket Support** - Full WebSocket API Gateway simulation
-- 📡 **Management API** - Send messages to WebSocket clients during development
-- ⚡ **Fast Builds** - Powered by esbuild for lightning-fast bundling
-- 🎯 **Zero Config** - Minimal setup required
+- 🌐 **Full API Gateway Simulation** - HTTP and WebSocket events work just like in AWS
+- 📦 **Simple Packaging** - Build and zip functions when you're ready to deploy
+- 🔧 **TypeScript First** - Full TypeScript support with proper type definitions
+- ⚡ **Lightning Fast** - Powered by esbuild for instant builds
+- 🎯 **Minimal Setup** - One config file and you're ready to go
 
 ## Quick Start
 
 ### Installation
 
 ```bash
+# npm
+npm install @ori-sh/dev-tools --save-dev
+
+# yarn
+yarn add @ori-sh/dev-tools --dev
+
+# pnpm
 pnpm add @ori-sh/dev-tools --save-dev
 ```
 
 ### Initialize a New Project
 
 ```bash
-npx dt init
+npx @ori-sh/dev-tools init
 ```
 
 This creates:
@@ -37,17 +43,52 @@ This creates:
 ### Start Development Server
 
 ```bash
-pnpm run dev
-# or
-pnpm exec dt dev
+dt dev
 ```
 
-### Package Functions
+Your functions are now available at:
+
+- HTTP: http://localhost:3000
+- WebSocket: ws://localhost:3001
+- @connections: http://localhost:3002 (send messages to WebSocket clients)
+
+### Build Functions
 
 ```bash
-pnpm run package
-# or
-pnpm exec dt package
+dt build
+```
+
+Builds your functions without packaging (useful for testing the build output).
+
+### Preview Production Build
+
+```bash
+dt preview
+```
+
+Serve your built functions without hot reload (production-like environment).
+
+### Package for Deployment
+
+```bash
+dt package
+```
+
+Creates ZIP files ready for AWS Lambda deployment.
+
+### Optional: Add npm scripts
+
+You can optionally add these scripts to your `package.json` for convenience:
+
+```json
+{
+  "scripts": {
+    "dev": "dt dev",
+    "build": "dt build",
+    "preview": "dt preview",
+    "package": "dt package"
+  }
+}
 ```
 
 ## Configuration
@@ -150,9 +191,9 @@ export async function handler(event: WebSocketEvent, context: LambdaContext): Pr
 
 Code changes are automatically detected and handlers are reloaded without restarting the server.
 
-### WebSocket Management API
+### Local @connections Endpoint
 
-Send messages to WebSocket clients during development:
+Send messages to connected WebSocket clients during development (simulates AWS's @connections API):
 
 ```bash
 # Send to specific connection
@@ -191,9 +232,32 @@ Options:
 - `--websocket-port <port>` - WebSocket server port (default: 3001)
 - `--no-watch` - Disable file watching
 
+### `dt build`
+
+Build Lambda functions without packaging (useful for testing).
+
+Options:
+
+- `--config <path>` - Configuration file path (default: "dev-tools.yaml")
+- `--function <name>` - Build specific function only
+- `--no-minify` - Disable code minification
+- `--sourcemap` - Generate source maps
+
+### `dt preview`
+
+Preview built Lambda functions without hot reload (production-like environment).
+
+Options:
+
+- `--config <path>` - Configuration file path (default: "dev-tools.yaml")
+- `--port <port>` - HTTP server port (default: 3000)
+- `--ws-port <port>` - WebSocket server port (default: 3001)
+- `--mgmt-port <port>` - Management server port (default: 3002)
+- `--build-dir <path>` - Build output directory (default: "lambda-build")
+
 ### `dt package`
 
-Build and package Lambda functions for deployment.
+Build and package Lambda functions into ZIP files for deployment.
 
 Options:
 
