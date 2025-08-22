@@ -1,7 +1,7 @@
 import js from '@eslint/js';
-import prettierConfig from 'eslint-config-prettier';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import noBarrelFiles from 'eslint-plugin-no-barrel-files';
 
 export default [
   // Global ignores
@@ -20,6 +20,9 @@ export default [
       ecmaVersion: 2022,
       sourceType: 'module',
       parser: tseslint.parser,
+    },
+    plugins: {
+      'no-barrel-files': noBarrelFiles,
     },
   },
 
@@ -45,9 +48,20 @@ export default [
       // General rules
       'prefer-const': 'error',
       'no-var': 'error',
+
+      // No barrel files
+      'no-barrel-files/no-barrel-files': 'error',
     },
   },
-
-  // Prettier configuration (disable conflicting rules)
-  prettierConfig,
+  // Test files configuration
+  {
+    files: ['**/*.{test,spec}.{ts,tsx}', '**/e2e/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
+    },
+  },
 ];

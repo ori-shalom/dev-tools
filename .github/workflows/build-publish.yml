@@ -35,6 +35,19 @@ jobs:
       - name: Build package
         run: pnpm run build
 
+      - name: Run tests with coverage
+        run: pnpm test -- --coverage
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage/coverage-final.json
+          flags: unittests
+          name: lambda-dev-tools-coverage
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Test CLI commands
         run: |
           # Test help

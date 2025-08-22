@@ -41,7 +41,7 @@ export class HandlerLoader {
   }
 
   private resolveHandlerFile(filePath: string, workingDir: string): string | null {
-    const extensions = ['.ts', '.js', '.mts', '.mjs'];
+    const extensions = ['.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs'];
 
     for (const ext of extensions) {
       const fullPath = resolve(workingDir, filePath + ext);
@@ -63,7 +63,7 @@ export class HandlerLoader {
     const ext = extname(handlerPath);
 
     // If it's already JavaScript, return as-is
-    if (ext === '.js' || ext === '.mjs') {
+    if (ext === '.js' || ext === '.jsx' || ext === '.mjs') {
       return handlerPath;
     }
 
@@ -78,10 +78,10 @@ export class HandlerLoader {
       format: 'cjs',
       outfile: outputPath,
       allowOverwrite: true,
-      external: ['aws-sdk', '@aws-sdk/*'],
       loader: {
         '.ts': 'ts',
         '.tsx': 'tsx',
+        '.jsx': 'jsx',
       },
     });
 
@@ -95,10 +95,21 @@ export class HandlerLoader {
       const module = await import(moduleUrl);
 
       // Get the export
-      const handler = module[exportName] || module.default || module;
+      let handler = module[exportName];
+      let actualExportName = exportName;
+
+      if (!handler) {
+        handler = module.default;
+        actualExportName = 'default';
+      }
+
+      if (!handler) {
+        handler = module;
+        actualExportName = 'module';
+      }
 
       if (typeof handler !== 'function') {
-        throw new Error(`Export '${exportName}' is not a function in ${builtPath}`);
+        throw new Error(`Export '${actualExportName}' is not a function in ${builtPath}`);
       }
 
       return handler;

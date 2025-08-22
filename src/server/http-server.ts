@@ -248,7 +248,8 @@ export class HttpServer {
     });
 
     // Error handler
-    this.app.use((error: Error, req: Request, res: Response) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    this.app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
       console.error(`[ERROR] ${req.method} ${req.path}:`, error);
 
       res.status(500).json({

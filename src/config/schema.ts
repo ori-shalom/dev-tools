@@ -74,7 +74,8 @@ export const ConfigSchema = z.object({
 });
 
 // Type exports
-export type Config = z.infer<typeof ConfigSchema>;
+export type ConfigInput = z.input<typeof ConfigSchema>;
+
 export type LambdaFunction = z.infer<typeof LambdaFunctionSchema>;
 export type HttpEvent = z.infer<typeof HttpEventSchema> & { type: 'http' };
 export type WebSocketEvent = z.infer<typeof WebSocketEventSchema> & { type: 'websocket' };

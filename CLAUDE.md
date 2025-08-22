@@ -103,6 +103,48 @@ pnpm run build && node dist/cli/index.js package
 
 ## Testing Approach
 
+### Unit Testing with Vitest
+
+The project uses Vitest for unit testing with the following guidelines:
+
+**Test Structure:**
+
+- Tests are located next to implementation files as `*.test.ts`
+- Example: `schema.ts` has tests in `schema.test.ts`
+- Tests run in parallel by default for better performance
+
+**Test Isolation:**
+
+- Tests must be isolated and not depend on each other
+- Use unique temporary directories for tests that generate artifacts
+- Clean up test artifacts in `afterEach` or `afterAll` hooks
+- Use `os.tmpdir()` and unique identifiers for temp directories
+
+**Coverage Requirements:**
+
+- Target 100% code coverage (branches, functions, lines, statements)
+- Coverage reports generated in `./coverage/` directory
+- Tests exclude `*.test.ts`, `dist/`, and config files from coverage
+
+**Test Commands:**
+
+```bash
+pnpm test              # Run tests once
+pnpm test:watch        # Run tests in watch mode
+pnpm test:coverage     # Run tests with coverage report
+pnpm test:ui           # Run tests with UI interface
+```
+
+**Test Patterns:**
+
+- Mock external dependencies (file system, network calls)
+- Test error conditions and edge cases
+- Use descriptive test names that explain the behavior being tested
+- Group related tests using `describe` blocks
+- Use `beforeEach`/`afterEach` for setup/cleanup
+
+### Integration Testing
+
 When testing Lambda Dev Tools functionality:
 
 1. Use the `init` command to create test projects
