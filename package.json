@@ -9,13 +9,12 @@
   },
   "scripts": {
     "build": "tsc",
+    "postbuild": "pnpm run generate-schema",
     "dev": "tsx watch src/cli/index.ts",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "type-check": "tsc --noEmit",
-    "test": "jest",
-    "generate-schema": "tsx src/config/generate-schema.ts",
-    "prepublishOnly": "pnpm run build"
+    "generate-schema": "tsx src/config/generate-schema.ts"
   },
   "keywords": [
     "aws",
