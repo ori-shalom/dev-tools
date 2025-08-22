@@ -77,8 +77,8 @@ export class HandlerLoader {
       entryPoints: [handlerPath],
       bundle: true, // Enable bundling to resolve relative imports
       platform: 'node',
-      target: 'node18',
-      format: 'cjs',
+      target: 'node22',
+      format: 'esm',
       outfile: outputPath,
       allowOverwrite: true,
       external: externalDeps, // Exclude native and node_modules dependencies
@@ -89,6 +89,10 @@ export class HandlerLoader {
       },
       // Resolve from the handler's directory context
       absWorkingDir: dirname(handlerPath),
+      // Handle workspace packages and TypeScript resolution
+      resolveExtensions: ['.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs'],
+      mainFields: ['main', 'module', 'exports'],
+      conditions: ['node', 'import', 'require'],
     });
 
     return outputPath;
@@ -108,9 +112,16 @@ export class HandlerLoader {
           ...packageJson.peerDependencies,
         };
 
-        // Add all node_modules dependencies as external
-        // This prevents bundling of native modules and keeps them in node_modules
-        external.push(...Object.keys(allDeps));
+        // Separate workspace packages from external packages
+        const workspacePackages = this.getWorkspacePackages(packageJsonPath);
+
+        // Add non-workspace dependencies as external
+        // Workspace packages should be bundled to handle TypeScript resolution
+        Object.keys(allDeps).forEach((dep) => {
+          if (!workspacePackages.includes(dep)) {
+            external.push(dep);
+          }
+        });
       } catch {
         // If we can't read package.json, use common native modules
         console.warn('Could not read package.json, using fallback external list');
@@ -135,6 +146,50 @@ export class HandlerLoader {
 
     // Remove duplicates
     return [...new Set(external)];
+  }
+
+  private getWorkspacePackages(packageJsonPath: string): string[] {
+    const workspacePackages: string[] = [];
+
+    try {
+      // Check if this is a workspace (has workspaces field)
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+
+      // Check for pnpm workspace
+      const pnpmWorkspacePath = join(dirname(packageJsonPath), 'pnpm-workspace.yaml');
+      if (existsSync(pnpmWorkspacePath)) {
+        // For pnpm workspaces, we'll check if packages start with @workspace prefix
+        // This is a heuristic since parsing YAML is complex
+        const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
+        Object.keys(deps).forEach((dep) => {
+          if (dep.startsWith('@') && deps[dep].startsWith('workspace:')) {
+            workspacePackages.push(dep);
+          }
+        });
+      }
+
+      // Check for npm/yarn workspaces
+      if (packageJson.workspaces) {
+        // This would require more complex workspace package discovery
+        // For now, use a heuristic based on package naming patterns
+        const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
+        Object.keys(deps).forEach((dep) => {
+          // Common workspace package patterns
+          if (
+            dep.startsWith('@botwork/') ||
+            dep.startsWith('@internal/') ||
+            deps[dep] === '*' ||
+            deps[dep].startsWith('workspace:')
+          ) {
+            workspacePackages.push(dep);
+          }
+        });
+      }
+    } catch {
+      // If we can't determine workspace packages, assume none
+    }
+
+    return workspacePackages;
   }
 
   private findPackageJson(startDir: string): string | null {

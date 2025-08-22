@@ -83,7 +83,7 @@ export class ESBuildBundler {
       bundle: true,
       platform: 'node',
       target: this.buildConfig.target,
-      format: 'cjs',
+      format: 'esm',
       outdir: outputDir,
       outExtension: { '.js': '.js' },
       minify: this.buildConfig.minify,

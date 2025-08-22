@@ -709,7 +709,7 @@ module.exports = { handler: () => {} };
           sourcemap: true,
           external: ['aws-sdk', 'lodash'],
           platform: 'node',
-          format: 'cjs',
+          format: 'esm',
           bundle: true,
         }),
       );

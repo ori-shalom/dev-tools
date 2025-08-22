@@ -38,7 +38,7 @@ describe('ConfigSchema', () => {
         },
         build: {
           outDir: './dist',
-          target: 'node18',
+          target: 'node22',
           minify: true,
           sourcemap: false,
           external: [],

@@ -139,7 +139,7 @@ describe('HandlerLoader', () => {
       );
 
       await expect(handlerLoader.loadHandler('no-export.nonExistentHandler', testDir)).rejects.toThrow(
-        "Export 'default' is not a function",
+        /is not a function/,
       );
     });
 
@@ -281,7 +281,7 @@ describe('HandlerLoader', () => {
       writeFileSync(
         handlerFile,
         `
-        exports.handler = async () => ({ hasExtension: false });
+        export const handler = async () => ({ hasExtension: false });
       `,
       );
 
@@ -312,7 +312,7 @@ describe('HandlerLoader', () => {
       writeFileSync(
         handlerFile,
         `
-        module.exports = async (event) => ({ exported: 'module' });
+        export default async (event) => ({ exported: 'module' });
       `,
       );
 

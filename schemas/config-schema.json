@@ -177,7 +177,7 @@
     "build": {
       "default": {
         "outDir": "./dist",
-        "target": "node18",
+        "target": "node22",
         "minify": true,
         "sourcemap": false,
         "external": []
@@ -191,7 +191,7 @@
         },
         "target": {
           "description": "Node.js target version",
-          "default": "node18",
+          "default": "node22",
           "type": "string"
         },
         "minify": {

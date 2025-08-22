@@ -55,7 +55,7 @@ const ServerConfigSchema = z.object({
 // Build configuration
 const BuildConfigSchema = z.object({
   outDir: z.string().optional().default('./dist').describe('Output directory for built lambdas'),
-  target: z.string().optional().default('node18').describe('Node.js target version'),
+  target: z.string().optional().default('node22').describe('Node.js target version'),
   minify: z.boolean().optional().default(true).describe('Minify the built code'),
   sourcemap: z.boolean().optional().default(false).describe('Generate source maps'),
   external: z.array(z.string()).optional().default([]).describe('External dependencies to exclude from bundle'),
