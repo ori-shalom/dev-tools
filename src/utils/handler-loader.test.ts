@@ -436,6 +436,415 @@ describe('HandlerLoader', () => {
     });
   });
 
+  describe('relative imports resolution', () => {
+    it('should resolve relative imports to sibling modules', async () => {
+      // Create shared module
+      const sharedDir = join(testDir, 'shared');
+      mkdirSync(sharedDir, { recursive: true });
+
+      const authFile = join(sharedDir, 'auth.ts');
+      writeFileSync(
+        authFile,
+        `
+        export interface AuthContext {
+          userId: string;
+          role: string;
+        }
+
+        export function validateAuth(token: string): AuthContext {
+          return {
+            userId: 'test-user-' + token.slice(-3),
+            role: 'admin'
+          };
+        }
+      `,
+      );
+
+      // Create handler that imports from shared module
+      const handlerFile = join(testDir, 'auth-handler.ts');
+      writeFileSync(
+        handlerFile,
+        `
+        import { AuthContext, validateAuth } from './shared/auth.js';
+
+        export const handler = async (event: any) => {
+          const token = event.headers?.Authorization || 'default-token';
+          const authContext: AuthContext = validateAuth(token);
+          
+          return {
+            statusCode: 200,
+            body: JSON.stringify({
+              message: 'Authenticated',
+              user: authContext.userId,
+              role: authContext.role
+            })
+          };
+        };
+      `,
+      );
+
+      const handler = await handlerLoader.loadHandler('auth-handler.handler', testDir);
+      expect(typeof handler).toBe('function');
+
+      const mockEvent = {
+        headers: { Authorization: 'Bearer test123' },
+      };
+
+      const result = await (handler as any)(mockEvent);
+      expect(result.statusCode).toBe(200);
+
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Authenticated');
+      expect(body.user).toBe('test-user-123');
+      expect(body.role).toBe('admin');
+    });
+
+    it('should resolve relative imports to parent directory modules', async () => {
+      // Create shared module in parent directory
+      const utilsFile = join(testDir, 'utils.ts');
+      writeFileSync(
+        utilsFile,
+        `
+        export function formatResponse(data: any) {
+          return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          };
+        }
+
+        export const constants = {
+          DEFAULT_TIMEOUT: 30000,
+          MAX_RETRIES: 3
+        };
+      `,
+      );
+
+      // Create handler in subdirectory
+      const handlersDir = join(testDir, 'handlers');
+      mkdirSync(handlersDir, { recursive: true });
+
+      const handlerFile = join(handlersDir, 'api.ts');
+      writeFileSync(
+        handlerFile,
+        `
+        import { formatResponse, constants } from '../utils.js';
+
+        export const handler = async (event: any) => {
+          const data = {
+            path: event.path || '/test',
+            timeout: constants.DEFAULT_TIMEOUT,
+            retries: constants.MAX_RETRIES
+          };
+          
+          return formatResponse(data);
+        };
+      `,
+      );
+
+      const handler = await handlerLoader.loadHandler('handlers/api.handler', testDir);
+      expect(typeof handler).toBe('function');
+
+      const mockEvent = { path: '/api/users' };
+      const result = await (handler as any)(mockEvent);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.headers['Content-Type']).toBe('application/json');
+
+      const body = JSON.parse(result.body);
+      expect(body.path).toBe('/api/users');
+      expect(body.timeout).toBe(30000);
+      expect(body.retries).toBe(3);
+    });
+
+    it('should resolve complex nested relative imports', async () => {
+      // Create nested directory structure
+      const sharedDir = join(testDir, 'src', 'shared');
+      const handlersDir = join(testDir, 'src', 'handlers');
+      const apiDir = join(handlersDir, 'api');
+
+      mkdirSync(sharedDir, { recursive: true });
+      mkdirSync(apiDir, { recursive: true });
+
+      // Create shared modules
+      const authFile = join(sharedDir, 'auth.ts');
+      writeFileSync(
+        authFile,
+        `
+        export function verifyToken(token: string): boolean {
+          return token.startsWith('valid-');
+        }
+      `,
+      );
+
+      const dbFile = join(sharedDir, 'database.ts');
+      writeFileSync(
+        dbFile,
+        `
+        export async function findUser(id: string) {
+          return { id, name: 'Test User', email: 'test@example.com' };
+        }
+      `,
+      );
+
+      // Create handler that imports from multiple shared modules
+      const handlerFile = join(apiDir, 'users.ts');
+      writeFileSync(
+        handlerFile,
+        `
+        import { verifyToken } from '../../shared/auth.js';
+        import { findUser } from '../../shared/database.js';
+
+        export const handler = async (event: any) => {
+          const token = event.headers?.Authorization?.replace('Bearer ', '') || '';
+          
+          if (!verifyToken(token)) {
+            return {
+              statusCode: 401,
+              body: JSON.stringify({ error: 'Invalid token' })
+            };
+          }
+
+          const userId = event.pathParameters?.id || 'default';
+          const user = await findUser(userId);
+
+          return {
+            statusCode: 200,
+            body: JSON.stringify({ user })
+          };
+        };
+      `,
+      );
+
+      const handler = await handlerLoader.loadHandler('src/handlers/api/users.handler', testDir);
+      expect(typeof handler).toBe('function');
+
+      // Test with invalid token
+      const invalidEvent = {
+        headers: { Authorization: 'Bearer invalid-token' },
+      };
+      const invalidResult = await (handler as any)(invalidEvent);
+      expect(invalidResult.statusCode).toBe(401);
+
+      // Test with valid token
+      const validEvent = {
+        headers: { Authorization: 'Bearer valid-token-123' },
+        pathParameters: { id: 'user-456' },
+      };
+      const validResult = await (handler as any)(validEvent);
+      expect(validResult.statusCode).toBe(200);
+
+      const body = JSON.parse(validResult.body);
+      expect(body.user.id).toBe('user-456');
+      expect(body.user.name).toBe('Test User');
+    });
+
+    it('should handle relative imports with TypeScript path mapping syntax', async () => {
+      // Create a handler that uses TypeScript-style imports
+      const typesDir = join(testDir, 'types');
+      mkdirSync(typesDir, { recursive: true });
+
+      const typesFile = join(typesDir, 'events.ts');
+      writeFileSync(
+        typesFile,
+        `
+        export interface ApiEvent {
+          httpMethod: string;
+          path: string;
+          body: string | null;
+        }
+
+        export interface ApiResponse {
+          statusCode: number;
+          body: string;
+        }
+      `,
+      );
+
+      const handlerFile = join(testDir, 'typed-handler.ts');
+      writeFileSync(
+        handlerFile,
+        `
+        import type { ApiEvent, ApiResponse } from './types/events.js';
+
+        export const handler = async (event: ApiEvent): Promise<ApiResponse> => {
+          return {
+            statusCode: 200,
+            body: JSON.stringify({
+              method: event.httpMethod,
+              path: event.path,
+              hasBody: !!event.body
+            })
+          };
+        };
+      `,
+      );
+
+      const handler = await handlerLoader.loadHandler('typed-handler.handler', testDir);
+      expect(typeof handler).toBe('function');
+
+      const mockEvent = {
+        httpMethod: 'POST',
+        path: '/api/data',
+        body: '{"test": true}',
+      };
+
+      const result = await (handler as any)(mockEvent);
+      expect(result.statusCode).toBe(200);
+
+      const body = JSON.parse(result.body);
+      expect(body.method).toBe('POST');
+      expect(body.path).toBe('/api/data');
+      expect(body.hasBody).toBe(true);
+    });
+
+    it('should handle circular import dependencies gracefully', async () => {
+      // Create two modules that reference each other
+      const moduleAFile = join(testDir, 'moduleA.ts');
+      writeFileSync(
+        moduleAFile,
+        `
+        import { helperB } from './moduleB.js';
+
+        export function helperA(value: string): string {
+          if (value === 'recurse') {
+            return helperB('stop');
+          }
+          return 'A:' + value;
+        }
+      `,
+      );
+
+      const moduleBFile = join(testDir, 'moduleB.ts');
+      writeFileSync(
+        moduleBFile,
+        `
+        import { helperA } from './moduleA.js';
+
+        export function helperB(value: string): string {
+          if (value === 'recurse') {
+            return helperA('stop');
+          }
+          return 'B:' + value;
+        }
+      `,
+      );
+
+      const handlerFile = join(testDir, 'circular-handler.ts');
+      writeFileSync(
+        handlerFile,
+        `
+        import { helperA } from './moduleA.js';
+        import { helperB } from './moduleB.js';
+
+        export const handler = async (event: any) => {
+          const type = event.type || 'A';
+          const value = event.value || 'test';
+          
+          const result = type === 'A' ? helperA(value) : helperB(value);
+          
+          return {
+            statusCode: 200,
+            body: JSON.stringify({ result })
+          };
+        };
+      `,
+      );
+
+      const handler = await handlerLoader.loadHandler('circular-handler.handler', testDir);
+      expect(typeof handler).toBe('function');
+
+      const result = await (handler as any)({ type: 'A', value: 'hello' });
+      expect(result.statusCode).toBe(200);
+
+      const body = JSON.parse(result.body);
+      expect(body.result).toBe('A:hello');
+    });
+
+    it('should preserve import context when bundling for temporary directory execution', async () => {
+      // This test specifically verifies the fix for the critical bug
+      // where relative imports failed when handlers were compiled to temp directories
+
+      const configDir = join(testDir, 'config');
+      mkdirSync(configDir, { recursive: true });
+
+      const configFile = join(configDir, 'settings.ts');
+      writeFileSync(
+        configFile,
+        `
+        export const appConfig = {
+          name: 'test-app',
+          version: '1.0.0',
+          features: ['auth', 'logging', 'metrics']
+        };
+
+        export function getFeatureFlag(feature: string): boolean {
+          return appConfig.features.includes(feature);
+        }
+      `,
+      );
+
+      const middlewareDir = join(testDir, 'middleware');
+      mkdirSync(middlewareDir, { recursive: true });
+
+      const middlewareFile = join(middlewareDir, 'logger.ts');
+      writeFileSync(
+        middlewareFile,
+        `
+        import { getFeatureFlag } from '../config/settings.js';
+
+        export function log(message: string): void {
+          if (getFeatureFlag('logging')) {
+            console.log('[LOG]', message);
+          }
+        }
+      `,
+      );
+
+      const handlerFile = join(testDir, 'complex-handler.ts');
+      writeFileSync(
+        handlerFile,
+        `
+        import { appConfig } from './config/settings.js';
+        import { log } from './middleware/logger.js';
+
+        export const handler = async (event: any) => {
+          log('Handler invoked');
+          
+          return {
+            statusCode: 200,
+            headers: {
+              'X-App-Name': appConfig.name,
+              'X-App-Version': appConfig.version
+            },
+            body: JSON.stringify({
+              app: appConfig.name,
+              version: appConfig.version,
+              eventType: event.type || 'unknown'
+            })
+          };
+        };
+      `,
+      );
+
+      // This should work without throwing "Cannot find module" errors
+      const handler = await handlerLoader.loadHandler('complex-handler.handler', testDir);
+      expect(typeof handler).toBe('function');
+
+      const mockEvent = { type: 'test-event' };
+      const result = await (handler as any)(mockEvent);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.headers['X-App-Name']).toBe('test-app');
+      expect(result.headers['X-App-Version']).toBe('1.0.0');
+
+      const body = JSON.parse(result.body);
+      expect(body.app).toBe('test-app');
+      expect(body.version).toBe('1.0.0');
+      expect(body.eventType).toBe('test-event');
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle deeply nested handler paths', async () => {
       const nestedDir = join(testDir, 'deep', 'nested', 'path');

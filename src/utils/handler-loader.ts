@@ -1,4 +1,4 @@
-import { resolve, extname } from 'path';
+import { resolve, extname, dirname } from 'path';
 import { existsSync } from 'fs';
 import { build } from 'esbuild';
 import { tmpdir } from 'os';
@@ -72,17 +72,20 @@ export class HandlerLoader {
 
     await build({
       entryPoints: [handlerPath],
-      bundle: false,
+      bundle: true, // Enable bundling to resolve relative imports
       platform: 'node',
       target: 'node18',
       format: 'cjs',
       outfile: outputPath,
       allowOverwrite: true,
+      external: [], // Bundle all dependencies for development
       loader: {
         '.ts': 'ts',
         '.tsx': 'tsx',
         '.jsx': 'jsx',
       },
+      // Resolve from the handler's directory context
+      absWorkingDir: dirname(handlerPath),
     });
 
     return outputPath;
