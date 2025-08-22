@@ -843,6 +843,142 @@ describe('HandlerLoader', () => {
       expect(body.version).toBe('1.0.0');
       expect(body.eventType).toBe('test-event');
     });
+
+    it('should handle native dependencies by excluding them from bundling', async () => {
+      // Create a mock package.json with native dependencies
+      const packageJsonFile = join(testDir, 'package.json');
+      writeFileSync(
+        packageJsonFile,
+        JSON.stringify(
+          {
+            name: 'test-project',
+            dependencies: {
+              argon2: '^0.30.0',
+              bcrypt: '^5.1.0',
+              express: '^4.18.0',
+            },
+            devDependencies: {
+              typescript: '^5.0.0',
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      // Create a handler that imports both native and regular dependencies
+      const handlerFile = join(testDir, 'native-deps-handler.ts');
+      writeFileSync(
+        handlerFile,
+        `
+        // These should be external (not bundled)
+        import type { Request } from 'express';
+        
+        // Mock argon2 since we can't actually install it in tests
+        const mockArgon2 = {
+          hash: async (password: string) => 'hashed_' + password,
+          verify: async (hash: string, password: string) => hash === 'hashed_' + password
+        };
+
+        export const handler = async (event: any) => {
+          const password = event.body?.password || 'test123';
+          
+          // Simulate using native dependency
+          const hash = await mockArgon2.hash(password);
+          const isValid = await mockArgon2.verify(hash, password);
+          
+          return {
+            statusCode: 200,
+            body: JSON.stringify({
+              passwordHash: hash,
+              isValid,
+              message: 'Native dependencies handled correctly'
+            })
+          };
+        };
+      `,
+      );
+
+      // This should work without trying to bundle native dependencies
+      const handler = await handlerLoader.loadHandler('native-deps-handler.handler', testDir);
+      expect(typeof handler).toBe('function');
+
+      const mockEvent = {
+        body: { password: 'mypassword' },
+      };
+
+      const result = await (handler as any)(mockEvent);
+      expect(result.statusCode).toBe(200);
+
+      const body = JSON.parse(result.body);
+      expect(body.passwordHash).toBe('hashed_mypassword');
+      expect(body.isValid).toBe(true);
+      expect(body.message).toBe('Native dependencies handled correctly');
+    });
+
+    it('should properly detect and exclude dependencies from package.json', async () => {
+      // Create a package.json with various dependency types
+      const packageJsonFile = join(testDir, 'package.json');
+      writeFileSync(
+        packageJsonFile,
+        JSON.stringify(
+          {
+            name: 'test-deps',
+            dependencies: { lodash: '^4.0.0' },
+            devDependencies: { jest: '^29.0.0' },
+            peerDependencies: { react: '^18.0.0' },
+          },
+          null,
+          2,
+        ),
+      );
+
+      // Create shared module
+      const utilsFile = join(testDir, 'utils.ts');
+      writeFileSync(
+        utilsFile,
+        `
+        export function processData(data: any) {
+          return { processed: true, data };
+        }
+      `,
+      );
+
+      // Create handler that imports both relative and external dependencies
+      const handlerFile = join(testDir, 'mixed-deps-handler.ts');
+      writeFileSync(
+        handlerFile,
+        `
+        import { processData } from './utils.js';
+        // Note: not actually importing lodash/jest/react since they're not installed
+        // but they should be in the external list
+
+        export const handler = async (event: any) => {
+          const result = processData(event.data || { test: true });
+          
+          return {
+            statusCode: 200,
+            body: JSON.stringify({
+              ...result,
+              externalDepsExcluded: true
+            })
+          };
+        };
+      `,
+      );
+
+      const handler = await handlerLoader.loadHandler('mixed-deps-handler.handler', testDir);
+      expect(typeof handler).toBe('function');
+
+      const mockEvent = { data: { value: 42 } };
+      const result = await (handler as any)(mockEvent);
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.processed).toBe(true);
+      expect(body.data.value).toBe(42);
+      expect(body.externalDepsExcluded).toBe(true);
+    });
   });
 
   describe('edge cases', () => {

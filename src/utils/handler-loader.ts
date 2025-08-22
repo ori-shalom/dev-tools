@@ -1,5 +1,5 @@
 import { resolve, extname, dirname } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { build } from 'esbuild';
 import { tmpdir } from 'os';
 import { mkdirSync, rmSync } from 'fs';
@@ -70,6 +70,9 @@ export class HandlerLoader {
     // Build TypeScript to JavaScript
     const outputPath = join(this.tempDir, `${Date.now()}.js`);
 
+    // Get external dependencies to exclude from bundling
+    const externalDeps = this.getExternalDependencies(handlerPath);
+
     await build({
       entryPoints: [handlerPath],
       bundle: true, // Enable bundling to resolve relative imports
@@ -78,7 +81,7 @@ export class HandlerLoader {
       format: 'cjs',
       outfile: outputPath,
       allowOverwrite: true,
-      external: [], // Bundle all dependencies for development
+      external: externalDeps, // Exclude native and node_modules dependencies
       loader: {
         '.ts': 'ts',
         '.tsx': 'tsx',
@@ -89,6 +92,64 @@ export class HandlerLoader {
     });
 
     return outputPath;
+  }
+
+  private getExternalDependencies(handlerPath: string): string[] {
+    const external: string[] = [];
+
+    // Find the nearest package.json to get dependencies
+    const packageJsonPath = this.findPackageJson(dirname(handlerPath));
+    if (packageJsonPath) {
+      try {
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+        const allDeps = {
+          ...packageJson.dependencies,
+          ...packageJson.devDependencies,
+          ...packageJson.peerDependencies,
+        };
+
+        // Add all node_modules dependencies as external
+        // This prevents bundling of native modules and keeps them in node_modules
+        external.push(...Object.keys(allDeps));
+      } catch {
+        // If we can't read package.json, use common native modules
+        console.warn('Could not read package.json, using fallback external list');
+      }
+    }
+
+    // Add common native modules that should never be bundled
+    const nativeModules = [
+      'argon2',
+      'bcrypt',
+      'sharp',
+      'sqlite3',
+      'node-gyp',
+      'canvas',
+      'playwright',
+      'puppeteer',
+      'fsevents',
+      'chokidar',
+    ];
+
+    external.push(...nativeModules);
+
+    // Remove duplicates
+    return [...new Set(external)];
+  }
+
+  private findPackageJson(startDir: string): string | null {
+    let currentDir = startDir;
+    const root = resolve('/');
+
+    while (currentDir !== root) {
+      const packageJsonPath = join(currentDir, 'package.json');
+      if (existsSync(packageJsonPath)) {
+        return packageJsonPath;
+      }
+      currentDir = dirname(currentDir);
+    }
+
+    return null;
   }
 
   private async importHandler(builtPath: string, exportName: string): Promise<unknown> {
