@@ -20,8 +20,8 @@
             "type": "string"
           },
           "events": {
-            "description": "List of events that trigger this function",
-            "minItems": 1,
+            "description": "List of events that trigger this function (optional for programmatically invoked functions)",
+            "default": [],
             "type": "array",
             "items": {
               "anyOf": [
@@ -41,7 +41,8 @@
                         "DELETE",
                         "PATCH",
                         "HEAD",
-                        "OPTIONS"
+                        "OPTIONS",
+                        "ANY"
                       ]
                     },
                     "path": {
@@ -106,9 +107,18 @@
           }
         },
         "required": [
-          "handler",
-          "events"
+          "handler"
         ]
+      }
+    },
+    "environment": {
+      "description": "Global environment variables applied to all functions",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string"
       }
     },
     "server": {

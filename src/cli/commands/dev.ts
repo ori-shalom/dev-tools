@@ -75,7 +75,7 @@ async function runDevServer(options: DevOptions): Promise<void> {
 
     const managementServer = new ManagementServer({
       websocketServer,
-      port: config.server.port,
+      port: (config.server.websocket?.port || config.server.port + 1) + 1, // Management port is WebSocket port + 1
       host: config.server.host,
     });
 
@@ -114,19 +114,25 @@ async function runDevServer(options: DevOptions): Promise<void> {
     console.log(
       `🔌 WebSocket server: ws://${config.server.host}:${config.server.websocket?.port || config.server.port + 1}`,
     );
-    console.log(`⚙️  Management API: http://${config.server.host}:${config.server.port + 1}`);
+    console.log(
+      `⚙️  Management API: http://${config.server.host}:${(config.server.websocket?.port || config.server.port + 1) + 1}`,
+    );
     console.log(`🔄 Hot reload: ${options.watch !== false ? 'enabled' : 'disabled'}`);
 
     console.log('\nLambda functions:');
     Object.entries(config.functions).forEach(([name, func]) => {
       console.log(`  📦 ${name}: ${func.handler}`);
-      func.events.forEach((event) => {
-        if (event.type === 'http') {
-          console.log(`    - HTTP ${event.method} ${event.path}`);
-        } else if (event.type === 'websocket') {
-          console.log(`    - WebSocket ${event.route}`);
-        }
-      });
+      if (func.events && func.events.length > 0) {
+        func.events.forEach((event) => {
+          if (event.type === 'http') {
+            console.log(`    - HTTP ${event.method} ${event.path}`);
+          } else if (event.type === 'websocket') {
+            console.log(`    - WebSocket ${event.route}`);
+          }
+        });
+      } else {
+        console.log('    - No events (programmatically invoked)');
+      }
     });
 
     console.log('\nPress Ctrl+C to stop the server');

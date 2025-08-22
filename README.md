@@ -100,6 +100,11 @@ Create a `dev-tools.yaml` file in your project root:
 
 service: my-lambda-service
 
+# Global environment variables (applied to all functions)
+environment:
+  NODE_ENV: development
+  API_VERSION: v1
+
 functions:
   hello:
     handler: src/handlers/hello.handler
@@ -273,19 +278,41 @@ Options:
 
 ```yaml
 functions:
-  my-function:
-    handler: src/handlers/my-function.handler
+  api-function:
+    handler: src/handlers/api.handler
     timeout: 30 # Function timeout in seconds (1-900)
     memorySize: 1024 # Memory size in MB (128-10240)
-    environment: # Environment variables
-      NODE_ENV: development
+    environment: # Function-specific environment variables
+      FUNCTION_TYPE: api
     events: # Event triggers
       - type: http
-        method: GET
-        path: /api/users
+        method: ANY # Supports GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, ANY
+        path: /api/{proxy+} # Catch-all route with proxy parameter
         cors: true
       - type: websocket
         route: $connect
+
+  background-function:
+    handler: src/handlers/background.handler
+    # Functions without events (for programmatic invocation)
+    # No events array needed
+```
+
+### Global Environment Variables
+
+```yaml
+# Global environment variables applied to all functions
+environment:
+  NODE_ENV: development
+  DATABASE_URL: postgresql://localhost:5432/myapp
+  API_KEY: your-api-key
+
+functions:
+  my-function:
+    handler: src/handlers/my-function.handler
+    environment:
+      # Function-specific environment variables (merged with global)
+      FUNCTION_ROLE: worker
 ```
 
 ### Server Configuration
@@ -298,6 +325,49 @@ server:
   websocket:
     port: 3001 # WebSocket server port
     pingInterval: 30000 # Ping interval in milliseconds
+```
+
+### HTTP Method Support
+
+Supports all standard HTTP methods plus `ANY`:
+
+```yaml
+events:
+  - type: http
+    method: ANY # Matches all HTTP methods
+    path: /api/{proxy+} # Catch-all route
+  - type: http
+    method: GET
+    path: /users/{id}
+```
+
+### Catch-All Routes
+
+Use `{proxy+}` for catch-all routes that capture remaining path segments:
+
+```yaml
+events:
+  - type: http
+    method: ANY
+    path: /api/{proxy+} # Matches /api/users, /api/users/123, /api/users/123/posts, etc.
+```
+
+### Functions Without Events
+
+Functions don't require events and can be used for programmatic invocation:
+
+```yaml
+functions:
+  scheduled-task:
+    handler: src/handlers/scheduled.handler
+    # No events - for background/programmatic use
+
+  api-handler:
+    handler: src/handlers/api.handler
+    events:
+      - type: http
+        method: GET
+        path: /api/users
 ```
 
 ### Build Configuration

@@ -57,8 +57,6 @@ export class HttpServer {
   }
 
   private registerHttpRoute(functionName: string, functionConfig: LambdaFunction, event: HttpEvent): void {
-    const method = event.method.toLowerCase() as keyof typeof this.app;
-
     // Convert API Gateway path syntax to Express path syntax
     const expressPath = this.convertApiGatewayPath(event.path);
 
@@ -68,46 +66,79 @@ export class HttpServer {
         // Extract path parameters
         const pathParameters = this.extractPathParameters(event.path, req.path);
 
-        // Load the Lambda handler
-        const lambdaHandler = await this.options.loadHandler(functionConfig.handler);
+        // Merge global and function-specific environment variables
+        const environment = {
+          ...this.options.config.environment,
+          ...functionConfig.environment,
+        };
 
-        // Transform request to Lambda event
-        const lambdaEvent = EventTransformer.toHttpEvent(req, event, pathParameters);
+        // Set environment variables in process.env for the handler
+        const originalEnv = { ...process.env };
+        Object.assign(process.env, environment);
 
-        // Create Lambda context
-        const context = createLambdaContext(
-          functionName,
-          lambdaEvent.requestContext.requestId,
-          functionConfig.memorySize,
-          functionConfig.timeout,
-        );
+        try {
+          // Load the Lambda handler
+          const lambdaHandler = await this.options.loadHandler(functionConfig.handler);
 
-        // Execute the handler
-        const result = await Promise.resolve(lambdaHandler(lambdaEvent, context));
+          // Transform request to Lambda event
+          const lambdaEvent = EventTransformer.toHttpEvent(req, event, pathParameters);
 
-        // Transform response
-        this.sendHttpResponse(res, result);
+          // Create Lambda context
+          const context = createLambdaContext(
+            functionName,
+            lambdaEvent.requestContext.requestId,
+            functionConfig.memorySize,
+            functionConfig.timeout,
+          );
+
+          // Execute the handler
+          const result = await Promise.resolve(lambdaHandler(lambdaEvent, context));
+
+          // Transform response
+          this.sendHttpResponse(res, result);
+        } finally {
+          // Restore original environment
+          process.env = originalEnv;
+        }
       } catch (error) {
         next(error);
       }
     };
 
-    // Register the route
-    if (typeof this.app[method] === 'function') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this.app as any)[method](expressPath, handler);
-      console.log(`Registered ${event.method} ${event.path} -> ${functionConfig.handler}`);
+    // Register the route for specific method or all methods
+    if (event.method === 'ANY') {
+      // Register for all HTTP methods
+      this.app.all(expressPath, handler);
+      console.log(`Registered ANY ${event.path} -> ${functionConfig.handler}`);
     } else {
-      console.warn(`Unsupported HTTP method: ${event.method}`);
+      const method = event.method.toLowerCase() as keyof typeof this.app;
+      if (typeof this.app[method] === 'function') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this.app as any)[method](expressPath, handler);
+        console.log(`Registered ${event.method} ${event.path} -> ${functionConfig.handler}`);
+      } else {
+        console.warn(`Unsupported HTTP method: ${event.method}`);
+      }
     }
   }
 
   private convertApiGatewayPath(apiGatewayPath: string): string {
-    // Convert {param} to :param for Express
-    return apiGatewayPath.replace(/\{([^}]+)\}/g, ':$1');
+    // Convert {proxy+} to * for Express catch-all routing
+    let expressPath = apiGatewayPath.replace(/\{([^}]+)\+\}/g, '*');
+
+    // Convert remaining {param} to :param for Express
+    expressPath = expressPath.replace(/\{([^}]+)\}/g, ':$1');
+
+    return expressPath;
   }
 
   private extractPathParameters(apiGatewayPath: string, actualPath: string): Record<string, string> {
+    // Handle proxy+ routes directly
+    if (apiGatewayPath.includes('+}')) {
+      return this.extractProxyPathParameters(apiGatewayPath, actualPath);
+    }
+
+    // Handle regular path parameters using path-to-regexp
     const keys: Key[] = [];
     const regexp = pathToRegexp(this.convertApiGatewayPath(apiGatewayPath), keys);
     const match = regexp.exec(actualPath);
@@ -120,6 +151,51 @@ export class HttpServer {
     keys.forEach((key, index) => {
       if (key.name && match[index + 1]) {
         params[key.name.toString()] = match[index + 1];
+      }
+    });
+
+    return params;
+  }
+
+  private extractProxyPathParameters(apiGatewayPath: string, actualPath: string): Record<string, string> {
+    const params: Record<string, string> = {};
+
+    // Convert API Gateway path to regex pattern
+    // Example: /api/{proxy+} -> /^\/api\/(.*)$/
+    // Example: /v1/{id}/items/{proxy+} -> /^\/v1\/([^/]+)\/items\/(.*)$/
+
+    let regexPattern = apiGatewayPath
+      .replace(/\{([^}]+)\+\}/g, '(.*)') // {proxy+} -> (.*)
+      .replace(/\{([^}]+)\}/g, '([^/]+)') // {param} -> ([^/]+)
+      .replace(/\//g, '\\/'); // Escape forward slashes
+
+    regexPattern = `^${regexPattern}$`;
+
+    const regex = new RegExp(regexPattern);
+    const match = actualPath.match(regex);
+
+    if (!match) {
+      return {};
+    }
+
+    // Extract parameter names from the original API Gateway path
+    const paramNames: string[] = [];
+    let paramMatch;
+    const paramRegex = /\{([^}]+)\}/g;
+
+    while ((paramMatch = paramRegex.exec(apiGatewayPath)) !== null) {
+      const paramName = paramMatch[1];
+      if (paramName.endsWith('+')) {
+        paramNames.push(paramName.slice(0, -1)); // Remove the '+' suffix
+      } else {
+        paramNames.push(paramName);
+      }
+    }
+
+    // Map captured groups to parameter names
+    paramNames.forEach((paramName, index) => {
+      if (match[index + 1] !== undefined) {
+        params[paramName] = match[index + 1];
       }
     });
 
@@ -190,7 +266,19 @@ export class HttpServer {
         resolve();
       });
 
-      this.server.on('error', reject);
+      this.server.on('error', (error: NodeJS.ErrnoException) => {
+        if (error.code === 'EADDRINUSE') {
+          reject(
+            new Error(
+              `Port ${port} is already in use. Please choose a different port or stop the service using port ${port}.`,
+            ),
+          );
+        } else if (error.code === 'EACCES') {
+          reject(new Error(`Permission denied to bind to port ${port}. Try using a port number above 1024.`));
+        } else {
+          reject(error);
+        }
+      });
     });
   }
 

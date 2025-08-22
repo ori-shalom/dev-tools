@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 
 // HTTP method schema
-const HttpMethodSchema = z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']);
+const HttpMethodSchema = z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'ANY']);
 
 // HTTP event configuration
 const HttpEventSchema = z.object({
@@ -31,8 +31,9 @@ const LambdaFunctionSchema = z.object({
         }),
       ]),
     )
-    .min(1)
-    .describe('List of events that trigger this function'),
+    .optional()
+    .default([])
+    .describe('List of events that trigger this function (optional for programmatically invoked functions)'),
   environment: z.record(z.string(), z.string()).optional().describe('Environment variables for this function'),
   timeout: z.number().min(1).max(900).optional().default(30).describe('Function timeout in seconds (1-900)'),
   memorySize: z.number().min(128).max(10240).optional().default(1024).describe('Memory size in MB (128-10240)'),
@@ -64,6 +65,10 @@ const BuildConfigSchema = z.object({
 export const ConfigSchema = z.object({
   service: z.string().describe('Service name'),
   functions: z.record(z.string(), LambdaFunctionSchema).describe('Lambda functions configuration'),
+  environment: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe('Global environment variables applied to all functions'),
   server: ServerConfigSchema.optional().default(ServerConfigSchema.parse({})),
   build: BuildConfigSchema.optional().default(BuildConfigSchema.parse({})),
 });

@@ -32,11 +32,29 @@ export class LambdaWebSocketServer {
           clientTracking: false,
         });
 
+        this.wss.on('error', (error: NodeJS.ErrnoException) => {
+          if (error.code === 'EADDRINUSE') {
+            reject(
+              new Error(
+                `WebSocket port ${port} is already in use. Please choose a different port or stop the service using port ${port}.`,
+              ),
+            );
+          } else if (error.code === 'EACCES') {
+            reject(
+              new Error(`Permission denied to bind to WebSocket port ${port}. Try using a port number above 1024.`),
+            );
+          } else {
+            reject(error);
+          }
+        });
+
+        this.wss.on('listening', () => {
+          console.log(`WebSocket server listening on ws://${host}:${port}`);
+          resolve();
+        });
+
         this.setupWebSocketHandlers();
         this.startPingInterval();
-
-        console.log(`WebSocket server listening on ws://${host}:${port}`);
-        resolve();
       } catch (error) {
         reject(error);
       }
@@ -111,32 +129,47 @@ export class LambdaWebSocketServer {
     }
 
     try {
-      // Load the handler
-      const handler = await this.options.loadHandler(handlerInfo.functionConfig.handler);
+      // Merge global and function-specific environment variables
+      const environment = {
+        ...this.options.config.environment,
+        ...handlerInfo.functionConfig.environment,
+      };
 
-      // Create WebSocket event
-      const webSocketEvent = EventTransformer.toWebSocketEvent(
-        message,
-        connection.connectionId,
-        route,
-        eventType,
-        request as IncomingMessage,
-      );
+      // Set environment variables in process.env for the handler
+      const originalEnv = { ...process.env };
+      Object.assign(process.env, environment);
 
-      // Create Lambda context
-      const context = createLambdaContext(
-        handlerInfo.functionName,
-        webSocketEvent.requestContext.requestId,
-        handlerInfo.functionConfig.memorySize,
-        handlerInfo.functionConfig.timeout,
-      );
+      try {
+        // Load the handler
+        const handler = await this.options.loadHandler(handlerInfo.functionConfig.handler);
 
-      // Execute handler
-      const result = await Promise.resolve(handler(webSocketEvent, context));
+        // Create WebSocket event
+        const webSocketEvent = EventTransformer.toWebSocketEvent(
+          message,
+          connection.connectionId,
+          route,
+          eventType,
+          request as IncomingMessage,
+        );
 
-      // Handle response if provided
-      if (result && result.statusCode !== 200) {
-        console.warn(`WebSocket handler returned non-200 status: ${result.statusCode}`);
+        // Create Lambda context
+        const context = createLambdaContext(
+          handlerInfo.functionName,
+          webSocketEvent.requestContext.requestId,
+          handlerInfo.functionConfig.memorySize,
+          handlerInfo.functionConfig.timeout,
+        );
+
+        // Execute handler
+        const result = await Promise.resolve(handler(webSocketEvent, context));
+
+        // Handle response if provided
+        if (result && result.statusCode !== 200) {
+          console.warn(`WebSocket handler returned non-200 status: ${result.statusCode}`);
+        }
+      } finally {
+        // Restore original environment
+        process.env = originalEnv;
       }
     } catch (error) {
       console.error(`Error executing WebSocket handler for route ${route}:`, error);
