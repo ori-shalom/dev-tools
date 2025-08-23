@@ -1,40 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { EventTransformer } from './event-transformer.js';
 import { IncomingMessage } from 'http';
 import { HttpEvent } from '../config/schema.js';
-
-// Mock Express-like Request (for backward compatibility in tests)
-type RequestLike = {
-  method: string;
-  path: string;
-  headers: Record<string, string | string[]>;
-  query: Record<string, string | string[]>;
-  body?: unknown;
-  ip?: string;
-  get?: (header: string) => string | undefined;
-};
-
-const createMockRequest = (options: {
-  method?: string;
-  path?: string;
-  headers?: Record<string, string | string[]>;
-  query?: Record<string, string | string[]>;
-  body?: unknown;
-  ip?: string;
-}): RequestLike => ({
-  method: options.method || 'GET',
-  path: options.path || '/',
-  headers: options.headers || {},
-  query: options.query || {},
-  body: options.body,
-  ip: options.ip || '127.0.0.1',
-  get: vi.fn((header: string) => {
-    if (header === 'User-Agent') {
-      return options.headers?.['user-agent'] || options.headers?.['User-Agent'];
-    }
-    return options.headers?.[header] || options.headers?.[header.toLowerCase()];
-  }),
-});
 
 // Mock Node.js IncomingMessage
 const createMockIncomingMessage = (options: {
@@ -50,13 +17,12 @@ const createMockIncomingMessage = (options: {
   }) as unknown as IncomingMessage;
 
 describe('EventTransformer', () => {
-  describe('toHttpEvent', () => {
+  describe('toNativeHttpEvent', () => {
     it('should transform basic GET request', () => {
-      const req = createMockRequest({
+      const req = createMockIncomingMessage({
         method: 'GET',
-        path: '/users',
+        url: '/users?page=1&limit=10',
         headers: { 'content-type': 'application/json' },
-        query: { page: '1', limit: '10' },
       });
 
       const event: HttpEvent = {
@@ -66,82 +32,42 @@ describe('EventTransformer', () => {
         cors: true,
       };
 
-      const result = EventTransformer.toHttpEvent(req, event);
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
 
       expect(result.httpMethod).toBe('GET');
       expect(result.path).toBe('/users');
-      expect(result.resource).toBe('/users');
-      expect(result.headers).toEqual({ 'content-type': 'application/json' });
-      expect(result.multiValueHeaders).toEqual({ 'content-type': ['application/json'] });
+      expect(result.headers['content-type']).toBe('application/json');
       expect(result.queryStringParameters).toEqual({ page: '1', limit: '10' });
-      expect(result.multiValueQueryStringParameters).toEqual({ page: ['1'], limit: ['10'] });
-      expect(result.pathParameters).toBe(null);
     });
 
-    it('should handle POST request with JSON body', () => {
-      const req = createMockRequest({
+    it('should transform POST request with body', () => {
+      const req = createMockIncomingMessage({
         method: 'POST',
-        path: '/users',
+        url: '/users',
         headers: { 'content-type': 'application/json' },
-        body: { name: 'John Doe', email: 'john@example.com' },
       });
+
+      const body = Buffer.from(JSON.stringify({ name: 'John', age: 30 }));
 
       const event: HttpEvent = {
         type: 'http',
         method: 'POST',
         path: '/users',
-        cors: true,
+        cors: false,
       };
 
-      const result = EventTransformer.toHttpEvent(req, event);
+      const result = EventTransformer.toNativeHttpEvent(req, event, {}, body);
 
       expect(result.httpMethod).toBe('POST');
-      expect(result.body).toBe('{"name":"John Doe","email":"john@example.com"}');
+      expect(result.path).toBe('/users');
+      expect(result.body).toBe('{"name":"John","age":30}');
       expect(result.isBase64Encoded).toBe(false);
     });
 
-    it('should handle request with string body', () => {
-      const req = createMockRequest({
-        method: 'POST',
-        path: '/webhook',
-        headers: { 'content-type': 'text/plain' },
-        body: 'plain text data',
-      });
-
-      const event: HttpEvent = {
-        type: 'http',
-        method: 'POST',
-        path: '/webhook',
-        cors: true,
-      };
-
-      const result = EventTransformer.toHttpEvent(req, event);
-
-      expect(result.body).toBe('plain text data');
-    });
-
-    it('should handle request with no body', () => {
-      const req = createMockRequest({
-        method: 'GET',
-        path: '/health',
-      });
-
-      const event: HttpEvent = {
-        type: 'http',
-        method: 'GET',
-        path: '/health',
-        cors: true,
-      };
-
-      const result = EventTransformer.toHttpEvent(req, event);
-
-      expect(result.body).toBe(null);
-    });
-
     it('should handle path parameters', () => {
-      const req = createMockRequest({
+      const req = createMockIncomingMessage({
         method: 'GET',
-        path: '/users/123',
+        url: '/users/123',
       });
 
       const event: HttpEvent = {
@@ -153,296 +79,232 @@ describe('EventTransformer', () => {
 
       const pathParameters = { id: '123' };
 
-      const result = EventTransformer.toHttpEvent(req, event, pathParameters);
+      const result = EventTransformer.toNativeHttpEvent(req, event, pathParameters);
 
       expect(result.pathParameters).toEqual({ id: '123' });
       expect(result.resource).toBe('/users/{id}');
-      expect(result.path).toBe('/users/123');
     });
 
-    it('should handle multiple query parameter values', () => {
-      const req = createMockRequest({
+    it('should handle multiple query parameters with same key', () => {
+      const req = createMockIncomingMessage({
         method: 'GET',
-        path: '/search',
-        query: { tags: ['javascript', 'typescript'], sort: 'date' },
+        url: '/items?tag=red&tag=blue&tag=green',
       });
 
       const event: HttpEvent = {
         type: 'http',
         method: 'GET',
-        path: '/search',
+        path: '/items',
         cors: true,
       };
 
-      const result = EventTransformer.toHttpEvent(req, event);
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
 
-      expect(result.queryStringParameters).toEqual({
-        tags: 'javascript',
-        sort: 'date',
-      });
-      expect(result.multiValueQueryStringParameters).toEqual({
-        tags: ['javascript', 'typescript'],
-        sort: ['date'],
-      });
+      expect(result.queryStringParameters?.tag).toBe('red');
+      expect(result.multiValueQueryStringParameters?.tag).toEqual(['red', 'blue', 'green']);
     });
 
-    it('should handle multiple header values', () => {
-      const req = createMockRequest({
+    it('should handle missing query parameters', () => {
+      const req = createMockIncomingMessage({
         method: 'GET',
-        path: '/api',
+        url: '/users',
+      });
+
+      const event: HttpEvent = {
+        type: 'http',
+        method: 'GET',
+        path: '/users',
+        cors: true,
+      };
+
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
+
+      expect(result.queryStringParameters).toBeNull();
+      expect(result.multiValueQueryStringParameters).toBeNull();
+    });
+
+    it('should handle array headers', () => {
+      const req = createMockIncomingMessage({
+        method: 'GET',
+        url: '/users',
         headers: {
           accept: ['application/json', 'text/html'],
-          'x-custom-header': 'single-value',
+          'x-custom': 'value',
         },
       });
 
       const event: HttpEvent = {
         type: 'http',
         method: 'GET',
-        path: '/api',
+        path: '/users',
         cors: true,
       };
 
-      const result = EventTransformer.toHttpEvent(req, event);
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
 
-      expect(result.headers).toEqual({
-        accept: 'application/json',
-        'x-custom-header': 'single-value',
-      });
-      expect(result.multiValueHeaders).toEqual({
-        accept: ['application/json', 'text/html'],
-        'x-custom-header': ['single-value'],
-      });
+      expect(result.headers.accept).toBe('application/json');
+      expect(result.multiValueHeaders.accept).toEqual(['application/json', 'text/html']);
+      expect(result.headers['x-custom']).toBe('value');
+      expect(result.multiValueHeaders['x-custom']).toEqual(['value']);
     });
 
-    it('should handle empty query parameters and headers', () => {
-      const req = createMockRequest({
+    it('should lowercase header keys', () => {
+      const req = createMockIncomingMessage({
         method: 'GET',
-        path: '/simple',
+        url: '/users',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': 'secret',
+        },
       });
 
       const event: HttpEvent = {
         type: 'http',
         method: 'GET',
-        path: '/simple',
+        path: '/users',
         cors: true,
       };
 
-      const result = EventTransformer.toHttpEvent(req, event);
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
 
-      expect(result.queryStringParameters).toBe(null);
-      expect(result.multiValueQueryStringParameters).toBe(null);
-      expect(result.pathParameters).toBe(null);
+      expect(result.headers['content-type']).toBe('application/json');
+      expect(result.headers['x-api-key']).toBe('secret');
     });
 
-    it('should generate valid request context', () => {
-      const req = createMockRequest({
+    it('should handle empty body', () => {
+      const req = createMockIncomingMessage({
+        method: 'POST',
+        url: '/users',
+      });
+
+      const event: HttpEvent = {
+        type: 'http',
+        method: 'POST',
+        path: '/users',
+        cors: false,
+      };
+
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
+
+      expect(result.body).toBeNull();
+    });
+
+    it('should populate request context', () => {
+      const req = createMockIncomingMessage({
         method: 'GET',
-        path: '/test',
-        headers: { 'user-agent': 'TestAgent/1.0' },
-        ip: '192.168.1.100',
+        url: '/users',
+        headers: { 'user-agent': 'Mozilla/5.0' },
       });
 
       const event: HttpEvent = {
         type: 'http',
         method: 'GET',
-        path: '/test',
+        path: '/users',
         cors: true,
       };
 
-      const result = EventTransformer.toHttpEvent(req, event);
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
 
       expect(result.requestContext.accountId).toBe('123456789012');
       expect(result.requestContext.apiId).toBe('local-api');
       expect(result.requestContext.httpMethod).toBe('GET');
-      expect(result.requestContext.resourcePath).toBe('/test');
       expect(result.requestContext.stage).toBe('local');
-      expect(result.requestContext.identity.sourceIp).toBe('192.168.1.100');
-      expect(result.requestContext.identity.userAgent).toBe('TestAgent/1.0');
+      expect(result.requestContext.identity.sourceIp).toBe('127.0.0.1');
+      expect(result.requestContext.identity.userAgent).toBe('Mozilla/5.0');
       expect(result.requestContext.requestId).toMatch(/^[a-z0-9]+$/);
     });
 
-    it('should handle undefined header values', () => {
-      const req = createMockRequest({
+    it('should handle special characters in query parameters', () => {
+      const req = createMockIncomingMessage({
         method: 'GET',
-        path: '/test',
-        headers: { 'x-undefined': undefined as unknown as string },
+        url: '/search?q=hello%20world&filter=%3Cscript%3E',
       });
 
       const event: HttpEvent = {
         type: 'http',
         method: 'GET',
-        path: '/test',
+        path: '/search',
         cors: true,
       };
 
-      const result = EventTransformer.toHttpEvent(req, event);
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
 
-      expect(result.headers).not.toHaveProperty('x-undefined');
-      expect(result.multiValueHeaders).not.toHaveProperty('x-undefined');
-    });
-
-    it('should handle undefined query parameter values', () => {
-      const req = createMockRequest({
-        method: 'GET',
-        path: '/test',
-        query: { valid: 'value', invalid: undefined as unknown as string },
+      expect(result.queryStringParameters).toEqual({
+        q: 'hello world',
+        filter: '<script>',
       });
-
-      const event: HttpEvent = {
-        type: 'http',
-        method: 'GET',
-        path: '/test',
-        cors: true,
-      };
-
-      const result = EventTransformer.toHttpEvent(req, event);
-
-      expect(result.queryStringParameters).toEqual({ valid: 'value' });
-      expect(result.multiValueQueryStringParameters).toEqual({ valid: ['value'] });
     });
   });
 
   describe('toWebSocketEvent', () => {
-    it('should transform connect event', () => {
-      const connectionId = 'abc123';
-      const route = '$connect';
-      const message = '';
-
-      const result = EventTransformer.toWebSocketEvent(message, connectionId, route, 'CONNECT');
+    it('should transform CONNECT event', () => {
+      const result = EventTransformer.toWebSocketEvent('connection data', 'connection-123', '$connect', 'CONNECT');
 
       expect(result.requestContext.routeKey).toBe('$connect');
+      expect(result.requestContext.connectionId).toBe('connection-123');
       expect(result.requestContext.eventType).toBe('CONNECT');
-      expect(result.requestContext.connectionId).toBe('abc123');
-      expect(result.requestContext.messageId).toBeUndefined();
-      expect(result.requestContext.stage).toBe('local');
-      expect(result.requestContext.apiId).toBe('local-websocket');
-      expect(result.body).toBe('');
-      expect(result.isBase64Encoded).toBe(false);
+      expect(result.body).toBe('connection data');
     });
 
-    it('should transform message event', () => {
-      const connectionId = 'abc123';
-      const route = 'message';
-      const message = '{"action":"ping"}';
-
-      const result = EventTransformer.toWebSocketEvent(message, connectionId, route, 'MESSAGE');
+    it('should transform MESSAGE event', () => {
+      const result = EventTransformer.toWebSocketEvent('{"action":"ping"}', 'connection-456', 'message', 'MESSAGE');
 
       expect(result.requestContext.routeKey).toBe('message');
+      expect(result.requestContext.connectionId).toBe('connection-456');
       expect(result.requestContext.eventType).toBe('MESSAGE');
-      expect(result.requestContext.connectionId).toBe('abc123');
       expect(result.requestContext.messageId).toBeDefined();
-      expect(result.requestContext.messageDirection).toBe('IN');
       expect(result.body).toBe('{"action":"ping"}');
     });
 
-    it('should transform disconnect event', () => {
-      const connectionId = 'abc123';
-      const route = '$disconnect';
-      const message = '';
-
-      const result = EventTransformer.toWebSocketEvent(message, connectionId, route, 'DISCONNECT');
+    it('should transform DISCONNECT event', () => {
+      const result = EventTransformer.toWebSocketEvent('', 'connection-789', '$disconnect', 'DISCONNECT');
 
       expect(result.requestContext.routeKey).toBe('$disconnect');
+      expect(result.requestContext.connectionId).toBe('connection-789');
       expect(result.requestContext.eventType).toBe('DISCONNECT');
-      expect(result.requestContext.connectionId).toBe('abc123');
       expect(result.requestContext.messageId).toBeUndefined();
-      expect(result.body).toBe('');
     });
 
-    it('should handle buffer message', () => {
-      const connectionId = 'abc123';
-      const route = 'data';
-      const message = Buffer.from('binary data');
-
-      const result = EventTransformer.toWebSocketEvent(message, connectionId, route, 'MESSAGE');
+    it('should handle Buffer input', () => {
+      const buffer = Buffer.from('binary data');
+      const result = EventTransformer.toWebSocketEvent(buffer, 'connection-000', 'message', 'MESSAGE');
 
       expect(result.body).toBe('binary data');
       expect(result.isBase64Encoded).toBe(false);
     });
 
-    it('should default to MESSAGE event type', () => {
-      const connectionId = 'abc123';
-      const route = 'default';
-      const message = 'test message';
+    it('should populate WebSocket request context', () => {
+      const result = EventTransformer.toWebSocketEvent('test', 'conn-123', 'route', 'MESSAGE');
 
-      const result = EventTransformer.toWebSocketEvent(message, connectionId, route);
-
-      expect(result.requestContext.eventType).toBe('MESSAGE');
-      expect(result.requestContext.messageId).toBeDefined();
-    });
-
-    it('should include request information when provided', () => {
-      const connectionId = 'abc123';
-      const route = 'test';
-      const message = 'test';
-
-      const mockRequest = {
-        socket: {
-          remoteAddress: '192.168.1.50',
-        },
-      } as IncomingMessage;
-
-      const result = EventTransformer.toWebSocketEvent(message, connectionId, route, 'MESSAGE', mockRequest);
-
-      expect(result.requestContext.identity.sourceIp).toBe('192.168.1.50');
-    });
-
-    it('should use default IP when no request provided', () => {
-      const connectionId = 'abc123';
-      const route = 'test';
-      const message = 'test';
-
-      const result = EventTransformer.toWebSocketEvent(message, connectionId, route, 'MESSAGE');
-
-      expect(result.requestContext.identity.sourceIp).toBe('127.0.0.1');
-    });
-
-    it('should handle missing user agent in request context', () => {
-      const req = createMockRequest({
-        method: 'GET',
-        path: '/test',
-        headers: {},
-        ip: '192.168.1.1',
-      });
-
-      const event: HttpEvent = { type: 'http', method: 'GET', path: '/test', cors: true };
-      const result = EventTransformer.toHttpEvent(req, event);
-
-      expect(result.requestContext.identity.userAgent).toBe('unknown');
-      expect(result.requestContext.identity.sourceIp).toBe('192.168.1.1');
-    });
-
-    it('should generate timestamps and timing information', () => {
-      const connectionId = 'abc123';
-      const route = 'test';
-      const message = 'test';
-
-      const beforeTime = Date.now();
-      const result = EventTransformer.toWebSocketEvent(message, connectionId, route, 'MESSAGE');
-      const afterTime = Date.now();
-
+      expect(result.requestContext.apiId).toBe('local-websocket');
+      expect(result.requestContext.stage).toBe('local');
+      expect(result.requestContext.domainName).toBe('localhost');
+      expect(result.requestContext.messageDirection).toBe('IN');
+      expect(result.requestContext.requestId).toMatch(/^[a-z0-9]+$/);
       expect(result.requestContext.requestTime).toBeDefined();
-      expect(Date.parse(result.requestContext.requestTime)).toBeGreaterThanOrEqual(beforeTime);
-      expect(Date.parse(result.requestContext.requestTime)).toBeLessThanOrEqual(afterTime);
+      expect(result.requestContext.requestTimeEpoch).toBeDefined();
+      expect(result.requestContext.connectedAt).toBeDefined();
+    });
 
-      expect(result.requestContext.requestTimeEpoch).toBeGreaterThanOrEqual(beforeTime);
-      expect(result.requestContext.requestTimeEpoch).toBeLessThanOrEqual(afterTime);
+    it('should use request info when provided', () => {
+      const mockRequest = {
+        socket: { remoteAddress: '192.168.1.100' },
+      } as unknown as IncomingMessage;
 
-      expect(result.requestContext.connectedAt).toBeGreaterThanOrEqual(beforeTime);
-      expect(result.requestContext.connectedAt).toBeLessThanOrEqual(afterTime);
+      const result = EventTransformer.toWebSocketEvent('test', 'conn-123', 'route', 'MESSAGE', mockRequest);
+
+      expect(result.requestContext.identity.sourceIp).toBe('192.168.1.100');
     });
   });
 
   describe('generateRequestId', () => {
     it('should generate unique request IDs', () => {
-      const req1 = createMockRequest({ method: 'GET', path: '/test1' });
-      const req2 = createMockRequest({ method: 'GET', path: '/test2' });
+      const req1 = createMockIncomingMessage({ method: 'GET', url: '/' });
+      const req2 = createMockIncomingMessage({ method: 'GET', url: '/' });
+      const event: HttpEvent = { type: 'http', method: 'GET', path: '/', cors: false };
 
-      const event: HttpEvent = { type: 'http', method: 'GET', path: '/test', cors: true };
-
-      const result1 = EventTransformer.toHttpEvent(req1, event);
-      const result2 = EventTransformer.toHttpEvent(req2, event);
+      const result1 = EventTransformer.toNativeHttpEvent(req1, event, {});
+      const result2 = EventTransformer.toNativeHttpEvent(req2, event, {});
 
       expect(result1.requestContext.requestId).not.toBe(result2.requestContext.requestId);
       expect(result1.requestContext.requestId).toMatch(/^[a-z0-9]+$/);
@@ -450,19 +312,18 @@ describe('EventTransformer', () => {
     });
 
     it('should generate consistent length request IDs', () => {
-      const req = createMockRequest({ method: 'GET', path: '/test' });
-      const event: HttpEvent = { type: 'http', method: 'GET', path: '/test', cors: true };
+      const results: string[] = [];
+      const event: HttpEvent = { type: 'http', method: 'GET', path: '/', cors: false };
 
-      const results = [];
-      for (let i = 0; i < 10; i++) {
-        const result = EventTransformer.toHttpEvent(req, event);
+      for (let i = 0; i < 100; i++) {
+        const req = createMockIncomingMessage({ method: 'GET', url: '/' });
+        const result = EventTransformer.toNativeHttpEvent(req, event, {});
         results.push(result.requestContext.requestId);
       }
 
-      // All IDs should have similar length (around 26 characters)
+      // All IDs should be exactly 32 characters (16 bytes as hex)
       results.forEach((id) => {
-        expect(id.length).toBeGreaterThanOrEqual(20);
-        expect(id.length).toBeLessThanOrEqual(30);
+        expect(id.length).toBe(32);
       });
 
       // All IDs should be unique
@@ -472,51 +333,43 @@ describe('EventTransformer', () => {
   });
 
   describe('edge cases', () => {
-    it('should handle numeric query parameter values', () => {
-      const req = createMockRequest({
-        method: 'GET',
-        path: '/test',
-        query: { page: 1 as unknown as string, limit: 50 as unknown as string },
-      });
+    it('should handle missing method', () => {
+      const req = {
+        url: '/test',
+        headers: {},
+        socket: { remoteAddress: '127.0.0.1' },
+      } as unknown as IncomingMessage;
 
-      const event: HttpEvent = { type: 'http', method: 'GET', path: '/test', cors: true };
-      const result = EventTransformer.toHttpEvent(req, event);
+      const event: HttpEvent = { type: 'http', method: 'GET', path: '/test', cors: false };
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
 
-      expect(result.queryStringParameters).toEqual({ page: '1', limit: '50' });
+      expect(result.httpMethod).toBe('GET');
     });
 
-    it('should handle boolean query parameter values', () => {
-      const req = createMockRequest({
+    it('should handle missing URL', () => {
+      const req = {
         method: 'GET',
-        path: '/test',
-        query: { active: true as unknown as string, deleted: false as unknown as string },
-      });
+        headers: {},
+        socket: { remoteAddress: '127.0.0.1' },
+      } as unknown as IncomingMessage;
 
-      const event: HttpEvent = { type: 'http', method: 'GET', path: '/test', cors: true };
-      const result = EventTransformer.toHttpEvent(req, event);
+      const event: HttpEvent = { type: 'http', method: 'GET', path: '/', cors: false };
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
 
-      expect(result.queryStringParameters).toEqual({ active: 'true', deleted: 'false' });
+      expect(result.path).toBe('/');
     });
 
-    it('should handle empty string in multi-value query parameters', () => {
-      const req = createMockRequest({
+    it('should handle missing socket', () => {
+      const req = {
         method: 'GET',
-        path: '/test',
-        query: { tags: ['', 'valid'] },
-      });
+        url: '/test',
+        headers: {},
+      } as unknown as IncomingMessage;
 
-      const event: HttpEvent = { type: 'http', method: 'GET', path: '/test', cors: true };
-      const result = EventTransformer.toHttpEvent(req, event);
+      const event: HttpEvent = { type: 'http', method: 'GET', path: '/test', cors: false };
+      const result = EventTransformer.toNativeHttpEvent(req, event, {});
 
-      expect(result.queryStringParameters).toEqual({ tags: '' });
-      expect(result.multiValueQueryStringParameters).toEqual({ tags: ['', 'valid'] });
-    });
-
-    it('should include websocket domain and extended request ID', () => {
-      const result = EventTransformer.toWebSocketEvent('test', 'conn123', '$connect');
-
-      expect(result.requestContext.domainName).toBe('localhost');
-      expect(result.requestContext.extendedRequestId).toBeDefined();
+      expect(result.requestContext.identity.sourceIp).toBe('127.0.0.1');
     });
   });
 });

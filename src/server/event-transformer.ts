@@ -1,90 +1,12 @@
 import { IncomingMessage } from 'http';
 import { parse as parseUrl } from 'url';
+import { randomBytes } from 'crypto';
 import { ApiGatewayHttpEvent, WebSocketEvent } from '../types/aws-lambda.js';
 import { HttpEvent } from '../config/schema.js';
 
-// Simple type for Express-like requests (for backward compatibility in tests)
-type RequestLike = {
-  method: string;
-  path: string;
-  headers: Record<string, string | string[]>;
-  query: Record<string, string | string[]>;
-  body?: unknown;
-  ip?: string;
-  get?: (header: string) => string | undefined;
-};
-
 export class EventTransformer {
   /**
-   * Transform Express-like request to API Gateway HTTP event
-   * @deprecated Use toNativeHttpEvent for production code
-   */
-  static toHttpEvent(
-    req: RequestLike,
-    event: HttpEvent,
-    pathParameters: Record<string, string> = {},
-  ): ApiGatewayHttpEvent {
-    const headers: Record<string, string> = {};
-    const multiValueHeaders: Record<string, string[]> = {};
-
-    // Process headers
-    Object.entries(req.headers).forEach(([key, value]) => {
-      const headerKey = key.toLowerCase();
-      if (Array.isArray(value)) {
-        multiValueHeaders[headerKey] = value;
-        headers[headerKey] = value[0];
-      } else if (value !== undefined) {
-        headers[headerKey] = value as string;
-        multiValueHeaders[headerKey] = [value as string];
-      }
-    });
-
-    // Process query parameters
-    const queryStringParameters: Record<string, string> = {};
-    const multiValueQueryStringParameters: Record<string, string[]> = {};
-
-    Object.entries(req.query).forEach(([key, value]) => {
-      if (Array.isArray(value)) {
-        multiValueQueryStringParameters[key] = value.map((v) => String(v));
-        queryStringParameters[key] = value[0] ? String(value[0]) : '';
-      } else if (value !== undefined) {
-        const stringValue = String(value);
-        queryStringParameters[key] = stringValue;
-        multiValueQueryStringParameters[key] = [stringValue];
-      }
-    });
-
-    return {
-      httpMethod: req.method,
-      path: req.path,
-      resource: event.path,
-      headers,
-      multiValueHeaders,
-      queryStringParameters: Object.keys(queryStringParameters).length > 0 ? queryStringParameters : null,
-      multiValueQueryStringParameters:
-        Object.keys(multiValueQueryStringParameters).length > 0 ? multiValueQueryStringParameters : null,
-      pathParameters: Object.keys(pathParameters).length > 0 ? pathParameters : null,
-      stageVariables: null,
-      requestContext: {
-        accountId: '123456789012',
-        apiId: 'local-api',
-        httpMethod: req.method,
-        requestId: this.generateRequestId(),
-        resourceId: 'local-resource',
-        resourcePath: event.path,
-        stage: 'local',
-        identity: {
-          sourceIp: req.ip || '127.0.0.1',
-          userAgent: req.get?.('User-Agent') || 'unknown',
-        },
-      },
-      body: req.body ? (typeof req.body === 'string' ? req.body : JSON.stringify(req.body)) : null,
-      isBase64Encoded: false,
-    };
-  }
-  /**
    * Transform Node.js IncomingMessage to API Gateway HTTP event
-   * (for use with native HTTP server instead of Express)
    */
   static toNativeHttpEvent(
     req: IncomingMessage,
@@ -202,6 +124,8 @@ export class EventTransformer {
    * Generate a random request ID
    */
   private static generateRequestId(): string {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    // Use crypto.randomBytes for better randomness and consistent length
+    // Generate 16 random bytes and convert to hex (32 characters)
+    return randomBytes(16).toString('hex');
   }
 }
