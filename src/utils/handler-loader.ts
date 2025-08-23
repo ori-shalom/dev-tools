@@ -168,13 +168,40 @@ export class HandlerLoader {
   }
 
   private createWorkspaceResolverPlugin(handlerPath: string): Plugin {
-    const packageJsonPath = this.findPackageJson(dirname(handlerPath));
-    if (!packageJsonPath) {
+    // Find workspace root by scanning upward from handler directory
+    const workspaceRoot = this.findWorkspaceRoot(dirname(handlerPath));
+
+    if (!workspaceRoot) {
+      this.logger.workspace.warn('No workspace root found for plugin, workspace resolution disabled');
       return { name: 'workspace-resolver', setup: () => {} };
     }
 
-    const workspacePackages = this.getWorkspacePackages(packageJsonPath);
-    const workspaceRoot = dirname(packageJsonPath);
+    // Get dependencies from nearest package.json
+    const packageJsonPath = this.findPackageJson(dirname(handlerPath));
+    if (!packageJsonPath) {
+      this.logger.workspace.warn('No package.json found for plugin');
+      return { name: 'workspace-resolver', setup: () => {} };
+    }
+
+    let workspacePackages: string[] = [];
+    try {
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      const deps = {
+        ...packageJson.dependencies,
+        ...packageJson.devDependencies,
+        ...packageJson.peerDependencies,
+      };
+      workspacePackages = this.getWorkspacePackagesFromRoot(workspaceRoot, deps);
+    } catch (error) {
+      this.logger.workspace.error(
+        `Failed to read dependencies for plugin: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      return { name: 'workspace-resolver', setup: () => {} };
+    }
+
+    this.logger.workspace.group(`[WORKSPACE PLUGIN] Configuring workspace resolver:`);
+    this.logger.workspace.item(`Workspace root: ${workspaceRoot}`);
+    this.logger.workspace.item(`Packages to resolve: [${workspacePackages.join(', ')}]`);
 
     return {
       name: 'workspace-resolver',
@@ -184,11 +211,14 @@ export class HandlerLoader {
           if (workspacePackages.includes(args.path)) {
             const resolvedPath = this.resolveWorkspacePath(args.path, workspaceRoot);
             if (resolvedPath) {
+              this.logger.workspace.item(`🔄 Resolving ${args.path} -> ${resolvedPath}`);
               return {
                 path: resolvedPath,
                 // Force bundling of workspace packages
                 external: false,
               };
+            } else {
+              this.logger.workspace.error(`❌ Failed to resolve workspace path: ${args.path}`);
             }
           }
           // Let other resolvers handle non-workspace imports
@@ -282,8 +312,18 @@ export class HandlerLoader {
           ...packageJson.peerDependencies,
         };
 
+        // Find workspace root (scan upward from handler directory)
+        const workspaceRoot = this.findWorkspaceRoot(dirname(handlerPath));
+
         // Get workspace packages - these will be BUNDLED, not external
-        const workspacePackages = this.getWorkspacePackages(packageJsonPath);
+        const workspacePackages = this.getWorkspacePackagesFromRoot(workspaceRoot, allDeps);
+
+        this.logger.workspace.item(`Workspace packages (will be bundled): [${workspacePackages.join(', ')}]`);
+        this.logger.workspace.item(
+          `External dependencies: [${Object.keys(allDeps)
+            .filter((dep) => !workspacePackages.includes(dep))
+            .join(', ')}]`,
+        );
 
         // Add non-workspace dependencies as external
         // IMPORTANT: Workspace packages are NOT added to external list
@@ -295,7 +335,7 @@ export class HandlerLoader {
         });
       } catch {
         // If we can't read package.json, use common native modules
-        console.warn('Could not read package.json, using fallback external list');
+        this.logger.workspace.warn('Could not read package.json, using fallback external list');
       }
     }
 
@@ -319,103 +359,105 @@ export class HandlerLoader {
     return [...new Set(external)];
   }
 
-  private getWorkspacePackages(packageJsonPath: string): string[] {
+  private getWorkspacePackagesFromRoot(workspaceRoot: string | null, deps: Record<string, string>): string[] {
     const workspacePackages: string[] = [];
 
-    this.logger.workspace.group('[WORKSPACE DEBUG] Scanning for workspace configuration...');
-    this.logger.workspace.item(`Package.json path: ${packageJsonPath}`);
+    if (!workspaceRoot) {
+      this.logger.workspace.warn('No workspace root found, treating all dependencies as external');
+      return workspacePackages;
+    }
+
+    this.logger.workspace.group(`[WORKSPACE DEBUG] Analyzing workspace at: ${workspaceRoot}`);
+    this.logger.workspace.item(`Dependencies to analyze: [${Object.keys(deps).join(', ')}]`);
 
     try {
-      // Check if this is a workspace (has workspaces field)
-      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-      const workspaceRoot = dirname(packageJsonPath);
-
-      if (this.debug.workspace) {
-        console.log(`  - Workspace root: ${workspaceRoot}`);
+      // Check for pnpm workspace
+      const pnpmWorkspacePath = join(workspaceRoot, 'pnpm-workspace.yaml');
+      if (existsSync(pnpmWorkspacePath)) {
+        this.logger.workspace.item(`Using pnpm workspace configuration`);
+        Object.keys(deps).forEach((dep) => {
+          // pnpm workspace patterns
+          if (deps[dep].startsWith('workspace:') || this.isPackageInWorkspace(dep, workspaceRoot)) {
+            this.logger.workspace.item(`✓ Workspace package: ${dep} (${deps[dep]})`);
+            workspacePackages.push(dep);
+          }
+        });
+      } else {
+        // Check for npm/yarn workspaces in workspace root package.json
+        const rootPackageJsonPath = join(workspaceRoot, 'package.json');
+        if (existsSync(rootPackageJsonPath)) {
+          const rootPackageJson = JSON.parse(readFileSync(rootPackageJsonPath, 'utf8'));
+          if (rootPackageJson.workspaces) {
+            this.logger.workspace.item(
+              `Using npm/yarn workspace configuration: ${JSON.stringify(rootPackageJson.workspaces)}`,
+            );
+            Object.keys(deps).forEach((dep) => {
+              // npm/yarn workspace patterns
+              if (
+                deps[dep] === '*' ||
+                deps[dep].startsWith('workspace:') ||
+                this.isPackageInWorkspace(dep, workspaceRoot)
+              ) {
+                this.logger.workspace.item(`✓ Workspace package: ${dep} (${deps[dep]})`);
+                workspacePackages.push(dep);
+              }
+            });
+          }
+        }
       }
 
-      // Get all dependencies
+      // Fallback: filesystem scan for packages that might be workspace packages but not declared properly
+      if (workspacePackages.length === 0) {
+        this.logger.workspace.warn('No workspace packages detected via config, scanning filesystem...');
+        Object.keys(deps).forEach((dep) => {
+          if (this.isPackageInWorkspace(dep, workspaceRoot)) {
+            this.logger.workspace.item(`✓ Found workspace package via filesystem: ${dep}`);
+            workspacePackages.push(dep);
+          }
+        });
+      }
+
+      // Log resolution details
+      this.logger.workspace.group('[WORKSPACE DEBUG] Package resolution details:');
+      if (workspacePackages.length > 0) {
+        workspacePackages.forEach((pkg) => {
+          const resolvedPath = this.resolveWorkspacePath(pkg, workspaceRoot);
+          if (resolvedPath) {
+            this.logger.workspace.item(`✅ ${pkg} -> ${resolvedPath}`);
+          } else {
+            this.logger.workspace.error(`❌ ${pkg} -> RESOLUTION FAILED`);
+          }
+        });
+      } else {
+        this.logger.workspace.warn('No workspace packages detected');
+      }
+    } catch (error) {
+      this.logger.workspace.error(
+        `Error analyzing workspace: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+
+    return workspacePackages;
+  }
+
+  // Keep old method for backward compatibility with createWorkspaceResolverPlugin
+  private getWorkspacePackages(packageJsonPath: string): string[] {
+    const workspaceRoot = this.findWorkspaceRoot(dirname(packageJsonPath));
+    if (!workspaceRoot) {
+      return [];
+    }
+
+    try {
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
       const deps = {
         ...packageJson.dependencies,
         ...packageJson.devDependencies,
         ...packageJson.peerDependencies,
       };
-
-      if (this.debug.workspace) {
-        console.log(`  - All dependencies: [${Object.keys(deps).join(', ')}]`);
-      }
-
-      // Check for pnpm workspace
-      const pnpmWorkspacePath = join(workspaceRoot, 'pnpm-workspace.yaml');
-      if (existsSync(pnpmWorkspacePath)) {
-        if (this.debug.workspace) {
-          console.log(`  - Found pnpm-workspace.yaml at ${pnpmWorkspacePath}`);
-        }
-        Object.keys(deps).forEach((dep) => {
-          // pnpm workspace patterns
-          if (deps[dep].startsWith('workspace:') || this.isPackageInWorkspace(dep, workspaceRoot)) {
-            if (this.debug.workspace) {
-              console.log(`  - Adding workspace package: ${dep} (${deps[dep]})`);
-            }
-            workspacePackages.push(dep);
-          }
-        });
-      }
-
-      // Check for npm/yarn workspaces
-      if (packageJson.workspaces) {
-        if (this.debug.workspace) {
-          console.log(`  - Found npm/yarn workspaces config: ${JSON.stringify(packageJson.workspaces)}`);
-        }
-        Object.keys(deps).forEach((dep) => {
-          // npm/yarn workspace patterns
-          if (
-            deps[dep] === '*' ||
-            deps[dep].startsWith('workspace:') ||
-            this.isPackageInWorkspace(dep, workspaceRoot)
-          ) {
-            if (this.debug.workspace) {
-              console.log(`  - Adding workspace package: ${dep} (${deps[dep]})`);
-            }
-            workspacePackages.push(dep);
-          }
-        });
-      }
-
-      // Fallback: check if packages physically exist in workspace
-      if (workspacePackages.length === 0) {
-        if (this.debug.workspace) {
-          console.log('  - No workspace detected via config, scanning filesystem...');
-        }
-        Object.keys(deps).forEach((dep) => {
-          if (this.isPackageInWorkspace(dep, workspaceRoot)) {
-            if (this.debug.workspace) {
-              console.log(`  - Found workspace package via filesystem: ${dep}`);
-            }
-            workspacePackages.push(dep);
-          }
-        });
-      }
-
-      if (this.debug.workspace) {
-        console.log('[WORKSPACE DEBUG] Workspace packages detected:');
-        if (workspacePackages.length > 0) {
-          workspacePackages.forEach((pkg) => {
-            const resolvedPath = this.resolveWorkspacePath(pkg, workspaceRoot);
-            console.log(`  - ${pkg} -> ${resolvedPath || 'NOT FOUND'}`);
-          });
-        } else {
-          console.log('  - No workspace packages found');
-        }
-      }
+      return this.getWorkspacePackagesFromRoot(workspaceRoot, deps);
     } catch {
-      // Error detecting workspace packages, continue with empty list
-      if (this.debug.workspace) {
-        console.log('  - Error reading workspace configuration');
-      }
+      return [];
     }
-
-    return workspacePackages;
   }
 
   private isPackageInWorkspace(packageName: string, workspaceRoot: string): boolean {
@@ -458,6 +500,39 @@ export class HandlerLoader {
       currentDir = dirname(currentDir);
     }
 
+    return null;
+  }
+
+  private findWorkspaceRoot(startDir: string): string | null {
+    let currentDir = startDir;
+    const root = resolve('/');
+
+    while (currentDir !== root) {
+      // Check for pnpm workspace
+      const pnpmWorkspacePath = join(currentDir, 'pnpm-workspace.yaml');
+      if (existsSync(pnpmWorkspacePath)) {
+        this.logger.workspace.item(`Found pnpm-workspace.yaml at: ${pnpmWorkspacePath}`);
+        return currentDir;
+      }
+
+      // Check for npm/yarn workspace in package.json
+      const packageJsonPath = join(currentDir, 'package.json');
+      if (existsSync(packageJsonPath)) {
+        try {
+          const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+          if (packageJson.workspaces) {
+            this.logger.workspace.item(`Found npm/yarn workspace at: ${packageJsonPath}`);
+            return currentDir;
+          }
+        } catch {
+          // Invalid package.json, continue searching
+        }
+      }
+
+      currentDir = dirname(currentDir);
+    }
+
+    this.logger.workspace.warn('No workspace root found');
     return null;
   }
 
