@@ -244,6 +244,38 @@ describe('EventTransformer', () => {
       expect(result.requestContext.connectionId).toBe('connection-123');
       expect(result.requestContext.eventType).toBe('CONNECT');
       expect(result.body).toBe('connection data');
+      expect(result.queryStringParameters).toBeNull();
+      expect(result.headers).toBeNull();
+    });
+
+    it('should transform CONNECT event with query parameters', () => {
+      const mockRequest = createMockIncomingMessage({
+        method: 'GET',
+        url: '/?token=admin_secret&account=test-account',
+        headers: { 'user-agent': 'Mozilla/5.0', origin: 'https://example.com' },
+      });
+
+      const result = EventTransformer.toWebSocketEvent('', 'connection-456', '$connect', 'CONNECT', mockRequest);
+
+      expect(result.requestContext.routeKey).toBe('$connect');
+      expect(result.requestContext.connectionId).toBe('connection-456');
+      expect(result.requestContext.eventType).toBe('CONNECT');
+      expect(result.queryStringParameters).toEqual({
+        token: 'admin_secret',
+        account: 'test-account',
+      });
+      expect(result.multiValueQueryStringParameters).toEqual({
+        token: ['admin_secret'],
+        account: ['test-account'],
+      });
+      expect(result.headers).toEqual({
+        'user-agent': 'Mozilla/5.0',
+        origin: 'https://example.com',
+      });
+      expect(result.multiValueHeaders).toEqual({
+        'user-agent': ['Mozilla/5.0'],
+        origin: ['https://example.com'],
+      });
     });
 
     it('should transform MESSAGE event', () => {
@@ -284,6 +316,24 @@ describe('EventTransformer', () => {
       expect(result.requestContext.requestTime).toBeDefined();
       expect(result.requestContext.requestTimeEpoch).toBeDefined();
       expect(result.requestContext.connectedAt).toBeDefined();
+    });
+
+    it('should handle multiple query parameters with same key', () => {
+      const mockRequest = createMockIncomingMessage({
+        method: 'GET',
+        url: '/?role=admin&role=user&role=guest&token=secret',
+      });
+
+      const result = EventTransformer.toWebSocketEvent('', 'connection-789', '$connect', 'CONNECT', mockRequest);
+
+      expect(result.queryStringParameters).toEqual({
+        role: 'admin',
+        token: 'secret',
+      });
+      expect(result.multiValueQueryStringParameters).toEqual({
+        role: ['admin', 'user', 'guest'],
+        token: ['secret'],
+      });
     });
 
     it('should use request info when provided', () => {

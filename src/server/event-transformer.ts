@@ -96,6 +96,55 @@ export class EventTransformer {
     eventType: 'CONNECT' | 'MESSAGE' | 'DISCONNECT' = 'MESSAGE',
     request?: IncomingMessage,
   ): WebSocketEvent {
+    let queryStringParameters: Record<string, string> | null = null;
+    let multiValueQueryStringParameters: Record<string, string[]> | null = null;
+    let headers: Record<string, string> | null = null;
+    let multiValueHeaders: Record<string, string[]> | null = null;
+
+    // Extract query parameters from WebSocket connection URL (for CONNECT events)
+    if (request?.url) {
+      const parsedUrl = parseUrl(request.url, true);
+      const queryParams: Record<string, string> = {};
+      const multiValueQueryParams: Record<string, string[]> = {};
+
+      Object.entries(parsedUrl.query || {}).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          multiValueQueryParams[key] = value;
+          queryParams[key] = value[0];
+        } else if (value !== undefined) {
+          queryParams[key] = value;
+          multiValueQueryParams[key] = [value];
+        }
+      });
+
+      if (Object.keys(queryParams).length > 0) {
+        queryStringParameters = queryParams;
+        multiValueQueryStringParameters = multiValueQueryParams;
+      }
+    }
+
+    // Extract headers from WebSocket connection request
+    if (request?.headers && Object.keys(request.headers).length > 0) {
+      const headerMap: Record<string, string> = {};
+      const multiValueHeaderMap: Record<string, string[]> = {};
+
+      Object.entries(request.headers).forEach(([key, value]) => {
+        const headerKey = key.toLowerCase();
+        if (Array.isArray(value)) {
+          multiValueHeaderMap[headerKey] = value;
+          headerMap[headerKey] = value[0];
+        } else if (value !== undefined) {
+          headerMap[headerKey] = value;
+          multiValueHeaderMap[headerKey] = [value];
+        }
+      });
+
+      if (Object.keys(headerMap).length > 0) {
+        headers = headerMap;
+        multiValueHeaders = multiValueHeaderMap;
+      }
+    }
+
     return {
       requestContext: {
         routeKey: route,
@@ -115,6 +164,10 @@ export class EventTransformer {
         connectionId,
         apiId: 'local-websocket',
       },
+      queryStringParameters,
+      multiValueQueryStringParameters,
+      headers,
+      multiValueHeaders,
       body: message instanceof Buffer ? message.toString() : String(message),
       isBase64Encoded: false,
     };

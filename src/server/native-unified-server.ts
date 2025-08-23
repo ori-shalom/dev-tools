@@ -22,6 +22,7 @@ type ConnectionInfo = {
     connectedAt: number;
     routeKey: string;
   };
+  request?: IncomingMessage; // Original WebSocket upgrade request
 };
 
 /**
@@ -189,11 +190,11 @@ export class NativeUnifiedServer {
   }
 
   private setupWebSocketHandlers(): void {
-    this.wsServer.on('connection', async (ws: WebSocket) => {
+    this.wsServer.on('connection', async (ws: WebSocket, request: IncomingMessage) => {
       const connectionId = `local_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       const routeKey = '$connect';
 
-      // Store connection
+      // Store connection with original request for parameter extraction
       const connectionInfo: ConnectionInfo = {
         ws,
         context: {
@@ -201,13 +202,14 @@ export class NativeUnifiedServer {
           connectedAt: Date.now(),
           routeKey,
         },
+        request, // Store the original WebSocket upgrade request
       };
       this.connections.set(connectionId, connectionInfo);
 
       console.log(`WebSocket connected: ${connectionId}`);
 
-      // Handle $connect event
-      await this.handleWebSocketEvent(routeKey, connectionId, null);
+      // Handle $connect event with original request
+      await this.handleWebSocketEvent(routeKey, connectionId, null, request);
 
       // Handle messages
       ws.on('message', async (data: Buffer) => {
@@ -225,13 +227,17 @@ export class NativeUnifiedServer {
           // Not JSON, use default route
         }
 
-        await this.handleWebSocketEvent(route, connectionId, message);
+        // Get the original request from connection info for query parameters
+        const connectionInfo = this.connections.get(connectionId);
+        await this.handleWebSocketEvent(route, connectionId, message, connectionInfo?.request);
       });
 
       // Handle disconnect
       ws.on('close', async () => {
         console.log(`WebSocket disconnected: ${connectionId}`);
-        await this.handleWebSocketEvent('$disconnect', connectionId, null);
+        // Get the original request from connection info for query parameters
+        const connectionInfo = this.connections.get(connectionId);
+        await this.handleWebSocketEvent('$disconnect', connectionId, null, connectionInfo?.request);
         this.connections.delete(connectionId);
       });
 
@@ -242,7 +248,12 @@ export class NativeUnifiedServer {
     });
   }
 
-  private async handleWebSocketEvent(routeKey: string, connectionId: string, body: string | null): Promise<void> {
+  private async handleWebSocketEvent(
+    routeKey: string,
+    connectionId: string,
+    body: string | null,
+    request?: IncomingMessage,
+  ): Promise<void> {
     // Find function that handles this WebSocket route
     const handlerInfo = this.findWebSocketHandler(routeKey);
     if (!handlerInfo) {
@@ -274,7 +285,7 @@ export class NativeUnifiedServer {
           eventType = 'DISCONNECT';
         }
 
-        const lambdaEvent = EventTransformer.toWebSocketEvent(body || '', connectionId, routeKey, eventType);
+        const lambdaEvent = EventTransformer.toWebSocketEvent(body || '', connectionId, routeKey, eventType, request);
 
         // Create Lambda context
         const context = createLambdaContext(

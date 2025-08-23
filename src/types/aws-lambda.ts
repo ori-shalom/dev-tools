@@ -94,6 +94,10 @@ export type WebSocketRequestContext = {
 
 export type WebSocketEvent = {
   requestContext: WebSocketRequestContext;
+  queryStringParameters?: Record<string, string> | null;
+  headers?: Record<string, string> | null;
+  multiValueQueryStringParameters?: Record<string, string[]> | null;
+  multiValueHeaders?: Record<string, string[]> | null;
   body?: string;
   isBase64Encoded: boolean;
 };
