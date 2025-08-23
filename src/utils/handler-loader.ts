@@ -4,6 +4,7 @@ import { build, Plugin, PluginBuild, OnResolveArgs } from 'esbuild';
 import { tmpdir } from 'os';
 import { mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'crypto';
 import { createDebugLoggers } from './debug-logger.js';
 
 export type DebugOptions = {
@@ -15,6 +16,8 @@ export type DebugOptions = {
 
 export class HandlerLoader {
   private cache = new Map<string, unknown>();
+  private compiledHandlers = new Map<string, string>(); // Source path -> compiled path
+  private handlerFileHashes = new Map<string, string>(); // Cache key -> file hash
   private tempDir: string;
   private debug: DebugOptions;
   private logger: ReturnType<typeof createDebugLoggers>;
@@ -82,13 +85,7 @@ export class HandlerLoader {
     this.logger.traceImports.item(`Working directory: ${workingDir}`);
     this.logger.traceImports.item(`Cache key: ${cacheKey}`);
 
-    // Clear cache for hot reload
-    if (this.cache.has(cacheKey)) {
-      this.cache.delete(cacheKey);
-      this.logger.traceImports.item('Cleared cache for hot reload');
-    }
-
-    // Resolve the handler file path
+    // Resolve the handler file path first to check for changes
     const [filePath, exportName = 'handler'] = handlerPath.split('.');
     const resolvedPath = this.resolveHandlerFile(filePath, workingDir);
 
@@ -96,8 +93,24 @@ export class HandlerLoader {
       throw new Error(`Handler file not found: ${filePath}`);
     }
 
+    // Check if handler source file has changed
+    const currentHash = this.getFileHash(resolvedPath);
+    const cachedHash = this.handlerFileHashes.get(cacheKey);
+
+    if (this.cache.has(cacheKey) && cachedHash === currentHash) {
+      this.logger.traceImports.item('Using cached handler instance (no changes detected)');
+      return this.cache.get(cacheKey);
+    }
+
+    // If file changed, clean up old resources
+    if (this.cache.has(cacheKey) && cachedHash !== currentHash) {
+      this.logger.traceImports.item('Handler file changed, cleaning up old resources');
+      await this.cleanupOldHandler(cacheKey, resolvedPath);
+    }
+
     this.logger.traceImports.item(`Resolved handler file: ${resolvedPath}`);
     this.logger.traceImports.item(`Export name: ${exportName}`);
+    this.logger.traceImports.item(`File hash: ${currentHash}`);
 
     // Build the handler file if it's TypeScript
     const builtPath = await this.buildHandler(resolvedPath);
@@ -110,7 +123,9 @@ export class HandlerLoader {
     // Load the handler function
     const handler = await this.importHandler(builtPath, exportName);
 
+    // Cache the handler and its file hash
     this.cache.set(cacheKey, handler);
+    this.handlerFileHashes.set(cacheKey, currentHash);
     return handler;
   }
 
@@ -146,8 +161,14 @@ export class HandlerLoader {
       return handlerPath;
     }
 
-    // Build TypeScript to JavaScript
-    const outputPath = join(this.tempDir, `${Date.now()}.js`);
+    // Check if we already have a compiled version that's still valid
+    const sourceHash = this.getFileHash(handlerPath);
+    const outputPath = join(this.tempDir, `handler_${sourceHash}.js`);
+
+    if (this.compiledHandlers.has(handlerPath) && existsSync(outputPath)) {
+      this.logger.bundle.item('Using existing compiled handler');
+      return outputPath;
+    }
 
     this.logger.bundle.item(`Temporary bundle path: ${outputPath}`);
 
@@ -190,6 +211,9 @@ export class HandlerLoader {
     this.logger.bundle.item(`absWorkingDir: ${buildConfig.absWorkingDir}`);
 
     await build(buildConfig);
+
+    // Cache the compiled handler path
+    this.compiledHandlers.set(handlerPath, outputPath);
 
     // Analyze the generated bundle
     try {
@@ -607,7 +631,8 @@ export class HandlerLoader {
 
     try {
       // Import the module using dynamic import for ESM compatibility
-      const moduleUrl = `file://${builtPath}?t=${Date.now()}`;
+      // Remove cache busting - we want to reuse the same module instance
+      const moduleUrl = `file://${builtPath}`;
 
       if (this.debug.runtime) {
         console.log(`  - Attempting dynamic import: ${moduleUrl}`);
@@ -670,12 +695,69 @@ export class HandlerLoader {
     }
   }
 
-  clearCache(): void {
+  async clearCache(): Promise<void> {
+    // Clean up all cached handlers before clearing
+    const cleanupPromises = Array.from(this.cache.keys()).map((cacheKey) => {
+      const handlerPath = cacheKey.split(':')[1];
+      const workingDir = cacheKey.split(':')[0];
+      const [filePath] = handlerPath.split('.');
+      const resolvedPath = this.resolveHandlerFile(filePath, workingDir);
+      return resolvedPath ? this.cleanupOldHandler(cacheKey, resolvedPath) : Promise.resolve();
+    });
+
+    await Promise.all(cleanupPromises);
+
     this.cache.clear();
+    this.handlerFileHashes.clear();
+    // Also clear compiled handlers cache to force recompilation
+    this.compiledHandlers.clear();
   }
 
-  dispose(): void {
-    this.clearCache();
+  private getFileHash(filePath: string): string {
+    try {
+      const content = readFileSync(filePath, 'utf8');
+      return createHash('md5').update(content).digest('hex').substring(0, 8);
+    } catch {
+      // If we can't read the file, use a timestamp as fallback
+      return Date.now().toString();
+    }
+  }
+
+  private async cleanupOldHandler(cacheKey: string, handlerPath: string): Promise<void> {
+    try {
+      // Remove old compiled file if it exists
+      const oldCompiledPath = this.compiledHandlers.get(handlerPath);
+      if (oldCompiledPath && existsSync(oldCompiledPath)) {
+        try {
+          rmSync(oldCompiledPath, { force: true });
+          this.logger.traceImports.item(`Removed old compiled file: ${oldCompiledPath}`);
+        } catch (error) {
+          this.logger.traceImports.warn(
+            `Failed to remove old compiled file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          );
+        }
+      }
+
+      // Clear the compiled handler cache entry
+      this.compiledHandlers.delete(handlerPath);
+
+      // Force garbage collection hint (if available)
+      if (global.gc) {
+        global.gc();
+        this.logger.traceImports.item('Triggered garbage collection for old handler cleanup');
+      }
+
+      // Small delay to allow async cleanup
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } catch (error) {
+      this.logger.traceImports.warn(
+        `Error during handler cleanup: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  async dispose(): Promise<void> {
+    await this.clearCache();
 
     // Clean up temp directory
     try {

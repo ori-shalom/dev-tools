@@ -91,9 +91,9 @@ async function runDevServer(options: DevOptions): Promise<void> {
     if (options.watch !== false) {
       fileWatcher = new FileWatcher();
 
-      fileWatcher.on('file-change', (event) => {
+      fileWatcher.on('file-change', async (event) => {
         console.log(`[${new Date().toISOString()}] File ${event.type}: ${event.path}`);
-        handlerLoader.clearCache();
+        await handlerLoader.clearCache();
         console.log('Handler cache cleared for hot reload');
       });
 
@@ -147,7 +147,7 @@ async function runDevServer(options: DevOptions): Promise<void> {
           fileWatcher.stop();
         }
 
-        handlerLoader.dispose();
+        await handlerLoader.dispose();
 
         console.log('✅ Servers stopped successfully');
         process.exit(0);
