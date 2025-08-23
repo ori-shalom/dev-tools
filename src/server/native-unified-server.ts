@@ -280,14 +280,28 @@ export class NativeUnifiedServer {
         // Execute the handler
         const result = await Promise.resolve(lambdaHandler(lambdaEvent, context));
 
-        // Handle response
-        if (result && 'statusCode' in result) {
+        // Handle response (match AWS API Gateway behavior)
+        let shouldCloseConnection = false;
+
+        if (result && typeof result === 'object' && 'statusCode' in result) {
+          // Explicit statusCode provided
           if (result.statusCode >= 400) {
-            const connection = this.connections.get(connectionId);
-            if (connection && routeKey === '$connect') {
-              connection.ws.close(1008, 'Connection rejected');
-              this.connections.delete(connectionId);
-            }
+            shouldCloseConnection = true;
+            console.log(`WebSocket ${routeKey} handler returned error status: ${result.statusCode}`);
+          } else {
+            console.log(`WebSocket ${routeKey} handler returned status: ${result.statusCode}`);
+          }
+        } else {
+          // No statusCode or undefined result - AWS defaults to success (200)
+          console.log(`WebSocket ${routeKey} handler completed successfully (default 200)`);
+        }
+
+        // Close connection only for $connect route with error status
+        if (shouldCloseConnection && routeKey === '$connect') {
+          const connection = this.connections.get(connectionId);
+          if (connection) {
+            connection.ws.close(1008, 'Connection rejected');
+            this.connections.delete(connectionId);
           }
         }
       } finally {
@@ -295,6 +309,16 @@ export class NativeUnifiedServer {
       }
     } catch (error) {
       console.error(`Error handling WebSocket event ${routeKey} for ${connectionId}:`, error);
+
+      // For $connect handler errors, close the connection (AWS behavior)
+      if (routeKey === '$connect') {
+        const connection = this.connections.get(connectionId);
+        if (connection) {
+          console.log(`Closing connection ${connectionId} due to $connect handler error`);
+          connection.ws.close(1011, 'Internal server error during connection');
+          this.connections.delete(connectionId);
+        }
+      }
     }
   }
 
