@@ -1,6 +1,6 @@
 {
   "name": "@ori-sh/dev-tools",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "type": "module",
   "description": "Lightweight AWS Lambda local development and packaging tool",
   "main": "dist/index.js",

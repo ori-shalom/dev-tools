@@ -1,5 +1,5 @@
 import { resolve, extname, dirname } from 'path';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import { build, Plugin, PluginBuild, OnResolveArgs } from 'esbuild';
 import { tmpdir } from 'os';
 import { mkdirSync, rmSync } from 'fs';
@@ -134,17 +134,17 @@ export class HandlerLoader {
   }
 
   private resolveWorkspacePath(packageName: string, workspaceRoot: string): string | null {
-    // Try to find the workspace package
-    // Common patterns for workspace packages
+    // Try to find the workspace package using the same logic as isPackageInWorkspace
     const possiblePaths = [
-      // pnpm pattern: packages/<name>
-      join(workspaceRoot, 'packages', packageName.replace('@', '').replace('/', '-')),
-      join(workspaceRoot, 'packages', packageName.split('/').pop() || packageName),
-      // Scoped pattern: packages/@scope/name
-      join(workspaceRoot, 'packages', packageName),
-      // Nested pattern: apps/<name>, libs/<name>
-      join(workspaceRoot, 'apps', packageName.split('/').pop() || packageName),
-      join(workspaceRoot, 'libs', packageName.split('/').pop() || packageName),
+      // Standard patterns
+      join(workspaceRoot, 'packages', packageName.replace(/^@[^/]+\//, '')), // @scope/name -> name
+      join(workspaceRoot, 'packages', packageName), // direct name
+      join(workspaceRoot, 'libs', packageName.replace(/^@[^/]+\//, '')),
+      join(workspaceRoot, 'libs', packageName),
+      join(workspaceRoot, 'apps', packageName.replace(/^@[^/]+\//, '')),
+      join(workspaceRoot, 'apps', packageName),
+      // Handle shared specifically for @botwork/shared -> packages/shared
+      join(workspaceRoot, 'packages', 'shared'),
     ];
 
     for (const basePath of possiblePaths) {
@@ -153,33 +153,48 @@ export class HandlerLoader {
         if (existsSync(packageJsonPath)) {
           try {
             const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-            // Get the main entry point
-            const mainField = packageJson.main || packageJson.module || './src/index.ts';
-            const fullPath = resolve(basePath, mainField);
 
-            // Try different extensions if the exact path doesn't exist
-            if (existsSync(fullPath)) {
-              return fullPath;
-            }
+            // Verify this is the correct package
+            if (packageJson.name === packageName) {
+              // Get the main entry point
+              const mainField = packageJson.main || packageJson.module || packageJson.exports?.main || './src/index.ts';
+              const fullPath = resolve(basePath, mainField);
 
-            // Try with common extensions
-            const extensions = ['.ts', '.js', '.tsx', '.jsx', '.mts', '.mjs'];
-            for (const ext of extensions) {
-              const pathWithExt = fullPath.replace(/\.[^.]*$/, ext);
-              if (existsSync(pathWithExt)) {
-                return pathWithExt;
+              // Try different extensions if the exact path doesn't exist
+              if (existsSync(fullPath)) {
+                return fullPath;
               }
-            }
 
-            // Try index files
-            for (const ext of extensions) {
-              const indexPath = join(dirname(fullPath), `index${ext}`);
-              if (existsSync(indexPath)) {
-                return indexPath;
+              // Try with common extensions
+              const extensions = ['.ts', '.js', '.tsx', '.jsx', '.mts', '.mjs'];
+              for (const ext of extensions) {
+                const pathWithExt = fullPath.replace(/\.[^.]*$/, ext);
+                if (existsSync(pathWithExt)) {
+                  return pathWithExt;
+                }
+              }
+
+              // Try index files in the directory
+              const dir = dirname(fullPath);
+              for (const ext of extensions) {
+                const indexPath = join(dir, `index${ext}`);
+                if (existsSync(indexPath)) {
+                  return indexPath;
+                }
+              }
+
+              // If main field points to a directory, try index files there
+              if (existsSync(fullPath) && statSync(fullPath).isDirectory()) {
+                for (const ext of extensions) {
+                  const indexPath = join(fullPath, `index${ext}`);
+                  if (existsSync(indexPath)) {
+                    return indexPath;
+                  }
+                }
               }
             }
           } catch {
-            // Invalid package.json, continue searching
+            // Invalid package.json, continue
           }
         }
       }
@@ -245,15 +260,21 @@ export class HandlerLoader {
     try {
       // Check if this is a workspace (has workspaces field)
       const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      const workspaceRoot = dirname(packageJsonPath);
+
+      // Get all dependencies
+      const deps = {
+        ...packageJson.dependencies,
+        ...packageJson.devDependencies,
+        ...packageJson.peerDependencies,
+      };
 
       // Check for pnpm workspace
-      const pnpmWorkspacePath = join(dirname(packageJsonPath), 'pnpm-workspace.yaml');
+      const pnpmWorkspacePath = join(workspaceRoot, 'pnpm-workspace.yaml');
       if (existsSync(pnpmWorkspacePath)) {
-        // For pnpm workspaces, we'll check if packages start with @workspace prefix
-        // This is a heuristic since parsing YAML is complex
-        const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
         Object.keys(deps).forEach((dep) => {
-          if (dep.startsWith('@') && deps[dep].startsWith('workspace:')) {
+          // pnpm workspace patterns
+          if (deps[dep].startsWith('workspace:') || this.isPackageInWorkspace(dep, workspaceRoot)) {
             workspacePackages.push(dep);
           }
         });
@@ -261,26 +282,59 @@ export class HandlerLoader {
 
       // Check for npm/yarn workspaces
       if (packageJson.workspaces) {
-        // This would require more complex workspace package discovery
-        // For now, use a heuristic based on package naming patterns
-        const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
         Object.keys(deps).forEach((dep) => {
-          // Common workspace package patterns
+          // npm/yarn workspace patterns
           if (
-            dep.startsWith('@botwork/') ||
-            dep.startsWith('@internal/') ||
             deps[dep] === '*' ||
-            deps[dep].startsWith('workspace:')
+            deps[dep].startsWith('workspace:') ||
+            this.isPackageInWorkspace(dep, workspaceRoot)
           ) {
             workspacePackages.push(dep);
           }
         });
       }
+
+      // Fallback: check if packages physically exist in workspace
+      if (workspacePackages.length === 0) {
+        Object.keys(deps).forEach((dep) => {
+          if (this.isPackageInWorkspace(dep, workspaceRoot)) {
+            workspacePackages.push(dep);
+          }
+        });
+      }
     } catch {
-      // If we can't determine workspace packages, assume none
+      // Error detecting workspace packages, continue with empty list
     }
 
     return workspacePackages;
+  }
+
+  private isPackageInWorkspace(packageName: string, workspaceRoot: string): boolean {
+    const possiblePaths = [
+      // Standard patterns
+      join(workspaceRoot, 'packages', packageName.replace(/^@[^/]+\//, '')), // @scope/name -> name
+      join(workspaceRoot, 'packages', packageName), // direct name
+      join(workspaceRoot, 'libs', packageName.replace(/^@[^/]+\//, '')),
+      join(workspaceRoot, 'libs', packageName),
+      join(workspaceRoot, 'apps', packageName.replace(/^@[^/]+\//, '')),
+      join(workspaceRoot, 'apps', packageName),
+      // Handle shared specifically for @botwork/shared -> packages/shared
+      join(workspaceRoot, 'packages', 'shared'),
+    ];
+
+    for (const path of possiblePaths) {
+      if (existsSync(join(path, 'package.json'))) {
+        try {
+          const pkg = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'));
+          if (pkg.name === packageName) {
+            return true;
+          }
+        } catch {
+          // Invalid package.json, continue
+        }
+      }
+    }
+    return false;
   }
 
   private findPackageJson(startDir: string): string | null {
