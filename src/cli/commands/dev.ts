@@ -18,6 +18,11 @@ export function createDevCommand(): Command {
     .option('-p, --port <port>', 'HTTP server port', '3000')
     .option('-w, --websocket-port <port>', 'WebSocket server port', '3001')
     .option('--no-watch', 'Disable file watching')
+    .option('--debug-workspace', 'Enable verbose workspace detection logging')
+    .option('--trace-imports', 'Trace complete import resolution process')
+    .option('--debug-bundle', 'Show ESBuild configuration and bundle analysis')
+    .option('--debug-runtime', 'Show runtime environment and module resolution')
+    .option('--debug-all', 'Enable all debugging features')
     .action(async (options) => {
       await runDevServer(options);
     });
@@ -30,6 +35,11 @@ type DevOptions = {
   port?: string;
   websocketPort?: string;
   watch: boolean;
+  debugWorkspace?: boolean;
+  traceImports?: boolean;
+  debugBundle?: boolean;
+  debugRuntime?: boolean;
+  debugAll?: boolean;
 };
 
 async function runDevServer(options: DevOptions): Promise<void> {
@@ -57,8 +67,25 @@ async function runDevServer(options: DevOptions): Promise<void> {
 
     console.log(`Starting development server for service: ${config.service}`);
 
-    // Initialize handler loader
-    const handlerLoader = new HandlerLoader();
+    // Set up debug options
+    const debugOptions = {
+      workspace: options.debugWorkspace || options.debugAll,
+      traceImports: options.traceImports || options.debugAll,
+      bundle: options.debugBundle || options.debugAll,
+      runtime: options.debugRuntime || options.debugAll,
+    };
+
+    if (Object.values(debugOptions).some(Boolean)) {
+      console.log('\n🐛 Debug mode enabled:');
+      if (debugOptions.workspace) console.log('  - Workspace detection logging');
+      if (debugOptions.traceImports) console.log('  - Import resolution tracing');
+      if (debugOptions.bundle) console.log('  - Bundle configuration analysis');
+      if (debugOptions.runtime) console.log('  - Runtime environment debugging');
+      console.log('');
+    }
+
+    // Initialize handler loader with debug options
+    const handlerLoader = new HandlerLoader(debugOptions);
 
     // Initialize servers
     const httpServer = new HttpServer({

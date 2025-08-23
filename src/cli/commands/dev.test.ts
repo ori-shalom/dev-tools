@@ -104,13 +104,18 @@ describe('Dev Command', () => {
       const command = createDevCommand();
       const options = command.options;
 
-      expect(options).toHaveLength(4);
+      expect(options).toHaveLength(9);
 
       const optionFlags = options.map((opt) => opt.flags);
       expect(optionFlags).toContain('-c, --config <path>');
       expect(optionFlags).toContain('-p, --port <port>');
       expect(optionFlags).toContain('-w, --websocket-port <port>');
       expect(optionFlags).toContain('--no-watch');
+      expect(optionFlags).toContain('--debug-workspace');
+      expect(optionFlags).toContain('--trace-imports');
+      expect(optionFlags).toContain('--debug-bundle');
+      expect(optionFlags).toContain('--debug-runtime');
+      expect(optionFlags).toContain('--debug-all');
     });
 
     it('should have default option values', () => {
