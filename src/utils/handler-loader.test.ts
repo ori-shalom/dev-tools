@@ -979,6 +979,225 @@ describe('HandlerLoader', () => {
       expect(body.data.value).toBe(42);
       expect(body.externalDepsExcluded).toBe(true);
     });
+
+    it('should resolve and bundle workspace dependencies correctly', async () => {
+      // Create pnpm workspace structure
+      const workspaceFile = join(testDir, 'pnpm-workspace.yaml');
+      writeFileSync(
+        workspaceFile,
+        `packages:
+  - 'packages/*'
+`,
+      );
+
+      // Create root package.json with workspace dependency
+      const packageJsonFile = join(testDir, 'package.json');
+      writeFileSync(
+        packageJsonFile,
+        JSON.stringify(
+          {
+            name: 'workspace-root',
+            dependencies: {
+              '@botwork/shared': 'workspace:*',
+              lodash: '^4.0.0', // External dependency
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      // Create workspace package directory structure
+      const sharedPackageDir = join(testDir, 'packages', 'shared');
+      mkdirSync(sharedPackageDir, { recursive: true });
+
+      // Create workspace package.json
+      const sharedPackageJson = join(sharedPackageDir, 'package.json');
+      writeFileSync(
+        sharedPackageJson,
+        JSON.stringify(
+          {
+            name: '@botwork/shared',
+            main: './src/index.ts',
+            version: '1.0.0',
+          },
+          null,
+          2,
+        ),
+      );
+
+      // Create workspace package source
+      const sharedSrcDir = join(sharedPackageDir, 'src');
+      mkdirSync(sharedSrcDir, { recursive: true });
+
+      const sharedIndexFile = join(sharedSrcDir, 'index.ts');
+      writeFileSync(
+        sharedIndexFile,
+        `
+        export interface ValidationResult {
+          isValid: boolean;
+          errors: string[];
+        }
+
+        export function validateInput(data: any): ValidationResult {
+          const errors: string[] = [];
+          
+          if (!data) {
+            errors.push('Data is required');
+          }
+          
+          if (!data.email) {
+            errors.push('Email is required');
+          }
+          
+          return {
+            isValid: errors.length === 0,
+            errors
+          };
+        }
+
+        export const VALIDATION_CONSTANTS = {
+          MAX_LENGTH: 255,
+          MIN_LENGTH: 1
+        };
+      `,
+      );
+
+      // Create handler that imports workspace package
+      const handlerFile = join(testDir, 'workspace-handler.ts');
+      writeFileSync(
+        handlerFile,
+        `
+        import { ValidationResult, validateInput, VALIDATION_CONSTANTS } from '@botwork/shared';
+
+        export const handler = async (event: any) => {
+          const inputData = event.body || { email: 'test@example.com' };
+          const result: ValidationResult = validateInput(inputData);
+          
+          return {
+            statusCode: result.isValid ? 200 : 400,
+            body: JSON.stringify({
+              validation: result,
+              constants: VALIDATION_CONSTANTS,
+              message: 'Workspace dependency resolved successfully'
+            })
+          };
+        };
+      `,
+      );
+
+      // Load and execute handler
+      const handler = await handlerLoader.loadHandler('workspace-handler.handler', testDir);
+      expect(typeof handler).toBe('function');
+
+      // Test with valid data
+      const validEvent = { body: { email: 'user@example.com' } };
+      const validResult = await (handler as any)(validEvent);
+      expect(validResult.statusCode).toBe(200);
+
+      const validBody = JSON.parse(validResult.body);
+      expect(validBody.validation.isValid).toBe(true);
+      expect(validBody.validation.errors).toEqual([]);
+      expect(validBody.constants.MAX_LENGTH).toBe(255);
+      expect(validBody.message).toBe('Workspace dependency resolved successfully');
+
+      // Test with invalid data
+      const invalidEvent = { body: {} };
+      const invalidResult = await (handler as any)(invalidEvent);
+      expect(invalidResult.statusCode).toBe(400);
+
+      const invalidBody = JSON.parse(invalidResult.body);
+      expect(invalidBody.validation.isValid).toBe(false);
+      expect(invalidBody.validation.errors).toContain('Email is required');
+    });
+
+    it('should handle workspace packages with different directory structures', async () => {
+      // Create npm workspace with different package structure
+      const packageJsonFile = join(testDir, 'package.json');
+      writeFileSync(
+        packageJsonFile,
+        JSON.stringify(
+          {
+            name: 'npm-workspace',
+            workspaces: ['libs/*'],
+            dependencies: {
+              '@internal/utils': '*',
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      // Create workspace package in libs directory
+      const utilsPackageDir = join(testDir, 'libs', 'utils');
+      mkdirSync(utilsPackageDir, { recursive: true });
+
+      const utilsPackageJson = join(utilsPackageDir, 'package.json');
+      writeFileSync(
+        utilsPackageJson,
+        JSON.stringify(
+          {
+            name: '@internal/utils',
+            main: './index.ts',
+          },
+          null,
+          2,
+        ),
+      );
+
+      const utilsIndexFile = join(utilsPackageDir, 'index.ts');
+      writeFileSync(
+        utilsIndexFile,
+        `
+        export function formatResponse(data: any, status = 200) {
+          return {
+            statusCode: status,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          };
+        }
+
+        export const API_CONSTANTS = {
+          VERSION: '1.0',
+          NAME: 'Internal API'
+        };
+      `,
+      );
+
+      // Create handler that uses workspace package
+      const handlerFile = join(testDir, 'utils-handler.ts');
+      writeFileSync(
+        handlerFile,
+        `
+        import { formatResponse, API_CONSTANTS } from '@internal/utils';
+
+        export const handler = async (event: any) => {
+          const data = {
+            message: 'Hello from workspace utils',
+            version: API_CONSTANTS.VERSION,
+            api: API_CONSTANTS.NAME,
+            timestamp: new Date().toISOString()
+          };
+          
+          return formatResponse(data);
+        };
+      `,
+      );
+
+      const handler = await handlerLoader.loadHandler('utils-handler.handler', testDir);
+      expect(typeof handler).toBe('function');
+
+      const result = await (handler as any)({});
+      expect(result.statusCode).toBe(200);
+      expect(result.headers['Content-Type']).toBe('application/json');
+
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Hello from workspace utils');
+      expect(body.version).toBe('1.0');
+      expect(body.api).toBe('Internal API');
+      expect(body.timestamp).toBeDefined();
+    });
   });
 
   describe('edge cases', () => {

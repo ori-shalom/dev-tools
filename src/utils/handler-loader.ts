@@ -1,6 +1,6 @@
 import { resolve, extname, dirname } from 'path';
 import { existsSync, readFileSync } from 'fs';
-import { build } from 'esbuild';
+import { build, Plugin, PluginBuild, OnResolveArgs } from 'esbuild';
 import { tmpdir } from 'os';
 import { mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
@@ -73,6 +73,9 @@ export class HandlerLoader {
     // Get external dependencies to exclude from bundling
     const externalDeps = this.getExternalDependencies(handlerPath);
 
+    // Create custom plugin to resolve workspace packages
+    const workspacePlugin = this.createWorkspaceResolverPlugin(handlerPath);
+
     await build({
       entryPoints: [handlerPath],
       bundle: true, // Enable bundling to resolve relative imports
@@ -93,9 +96,96 @@ export class HandlerLoader {
       resolveExtensions: ['.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs'],
       mainFields: ['main', 'module', 'exports'],
       conditions: ['node', 'import', 'require'],
+      plugins: [workspacePlugin],
     });
 
     return outputPath;
+  }
+
+  private createWorkspaceResolverPlugin(handlerPath: string): Plugin {
+    const packageJsonPath = this.findPackageJson(dirname(handlerPath));
+    if (!packageJsonPath) {
+      return { name: 'workspace-resolver', setup: () => {} };
+    }
+
+    const workspacePackages = this.getWorkspacePackages(packageJsonPath);
+    const workspaceRoot = dirname(packageJsonPath);
+
+    return {
+      name: 'workspace-resolver',
+      setup: (build: PluginBuild) => {
+        // Resolve workspace packages to their actual file paths
+        build.onResolve({ filter: /.*/ }, (args: OnResolveArgs) => {
+          if (workspacePackages.includes(args.path)) {
+            const resolvedPath = this.resolveWorkspacePath(args.path, workspaceRoot);
+            if (resolvedPath) {
+              return {
+                path: resolvedPath,
+                // Force bundling of workspace packages
+                external: false,
+              };
+            }
+          }
+          // Let other resolvers handle non-workspace imports
+          return undefined;
+        });
+      },
+    };
+  }
+
+  private resolveWorkspacePath(packageName: string, workspaceRoot: string): string | null {
+    // Try to find the workspace package
+    // Common patterns for workspace packages
+    const possiblePaths = [
+      // pnpm pattern: packages/<name>
+      join(workspaceRoot, 'packages', packageName.replace('@', '').replace('/', '-')),
+      join(workspaceRoot, 'packages', packageName.split('/').pop() || packageName),
+      // Scoped pattern: packages/@scope/name
+      join(workspaceRoot, 'packages', packageName),
+      // Nested pattern: apps/<name>, libs/<name>
+      join(workspaceRoot, 'apps', packageName.split('/').pop() || packageName),
+      join(workspaceRoot, 'libs', packageName.split('/').pop() || packageName),
+    ];
+
+    for (const basePath of possiblePaths) {
+      if (existsSync(basePath)) {
+        const packageJsonPath = join(basePath, 'package.json');
+        if (existsSync(packageJsonPath)) {
+          try {
+            const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+            // Get the main entry point
+            const mainField = packageJson.main || packageJson.module || './src/index.ts';
+            const fullPath = resolve(basePath, mainField);
+
+            // Try different extensions if the exact path doesn't exist
+            if (existsSync(fullPath)) {
+              return fullPath;
+            }
+
+            // Try with common extensions
+            const extensions = ['.ts', '.js', '.tsx', '.jsx', '.mts', '.mjs'];
+            for (const ext of extensions) {
+              const pathWithExt = fullPath.replace(/\.[^.]*$/, ext);
+              if (existsSync(pathWithExt)) {
+                return pathWithExt;
+              }
+            }
+
+            // Try index files
+            for (const ext of extensions) {
+              const indexPath = join(dirname(fullPath), `index${ext}`);
+              if (existsSync(indexPath)) {
+                return indexPath;
+              }
+            }
+          } catch {
+            // Invalid package.json, continue searching
+          }
+        }
+      }
+    }
+
+    return null;
   }
 
   private getExternalDependencies(handlerPath: string): string[] {
@@ -112,11 +202,12 @@ export class HandlerLoader {
           ...packageJson.peerDependencies,
         };
 
-        // Separate workspace packages from external packages
+        // Get workspace packages - these will be BUNDLED, not external
         const workspacePackages = this.getWorkspacePackages(packageJsonPath);
 
         // Add non-workspace dependencies as external
-        // Workspace packages should be bundled to handle TypeScript resolution
+        // IMPORTANT: Workspace packages are NOT added to external list
+        // This allows ESBuild to bundle them, resolving TypeScript imports
         Object.keys(allDeps).forEach((dep) => {
           if (!workspacePackages.includes(dep)) {
             external.push(dep);
