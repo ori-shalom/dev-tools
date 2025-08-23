@@ -1,5 +1,5 @@
 import { resolve, extname, dirname } from 'path';
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync, symlinkSync } from 'fs';
 import { build, Plugin, PluginBuild, OnResolveArgs } from 'esbuild';
 import { tmpdir } from 'os';
 import { mkdirSync, rmSync } from 'fs';
@@ -31,6 +31,50 @@ export class HandlerLoader {
     this.logger.runtime.item(`Original project root: ${process.cwd()}`);
   }
 
+  private setupNodeModulesSymlink(projectRoot: string): void {
+    // Find the nearest node_modules directory from the project root
+    const nodeModulesPath = this.findNodeModules(projectRoot);
+
+    if (!nodeModulesPath) {
+      this.logger.runtime.warn('No node_modules found, native dependencies may fail to resolve');
+      return;
+    }
+
+    const tempNodeModulesPath = join(this.tempDir, 'node_modules');
+
+    try {
+      // Create symlink to the original node_modules
+      symlinkSync(nodeModulesPath, tempNodeModulesPath, 'dir');
+      this.logger.runtime.item(`✅ Created node_modules symlink: ${tempNodeModulesPath} -> ${nodeModulesPath}`);
+    } catch (error) {
+      // Symlink might already exist or permissions issue
+      if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
+        this.logger.runtime.item(`node_modules symlink already exists`);
+      } else {
+        this.logger.runtime.error(
+          `Failed to create node_modules symlink: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    }
+  }
+
+  private findNodeModules(startDir: string): string | null {
+    let currentDir = startDir;
+    const root = resolve('/');
+
+    while (currentDir !== root) {
+      const nodeModulesPath = join(currentDir, 'node_modules');
+      if (existsSync(nodeModulesPath)) {
+        this.logger.runtime.item(`Found node_modules at: ${nodeModulesPath}`);
+        return nodeModulesPath;
+      }
+      currentDir = dirname(currentDir);
+    }
+
+    this.logger.runtime.warn('No node_modules directory found');
+    return null;
+  }
+
   async loadHandler(handlerPath: string, workingDir: string): Promise<unknown> {
     const cacheKey = `${workingDir}:${handlerPath}`;
 
@@ -59,6 +103,9 @@ export class HandlerLoader {
     const builtPath = await this.buildHandler(resolvedPath);
 
     this.logger.traceImports.item(`Built handler path: ${builtPath}`);
+
+    // Setup node_modules symlink for native dependency resolution
+    this.setupNodeModulesSymlink(workingDir);
 
     // Load the handler function
     const handler = await this.importHandler(builtPath, exportName);
