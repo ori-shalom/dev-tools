@@ -161,6 +161,34 @@ export async function handler(event: ApiGatewayHttpEvent, context: LambdaContext
       message: 'Hello from Lambda!',
       path: event.path,
       method: event.httpMethod,
+      // Access path parameters (including proxy routes)
+      pathParameters: event.pathParameters,
+    }),
+  };
+}
+```
+
+### Proxy Route Handler Example
+
+For proxy routes using `{proxy+}`, you can access the captured path segments:
+
+```typescript
+export async function handler(event: ApiGatewayHttpEvent, context: LambdaContext): Promise<ApiGatewayHttpResponse> {
+  const { proxy } = event.pathParameters || {};
+
+  // Route based on the proxy path
+  if (proxy?.startsWith('users/')) {
+    return handleUserRequest(event, context);
+  } else if (proxy?.startsWith('posts/')) {
+    return handlePostRequest(event, context);
+  }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      message: 'API Gateway Proxy Integration',
+      capturedPath: proxy,
+      originalPath: event.path,
     }),
   };
 }
@@ -341,9 +369,9 @@ events:
     path: /users/{id}
 ```
 
-### Catch-All Routes
+### Catch-All Routes (Proxy Integration)
 
-Use `{proxy+}` for catch-all routes that capture remaining path segments:
+Use `{proxy+}` for catch-all routes that capture remaining path segments. The proxy parameter contains the captured path:
 
 ```yaml
 events:
@@ -351,6 +379,27 @@ events:
     method: ANY
     path: /api/{proxy+} # Matches /api/users, /api/users/123, /api/users/123/posts, etc.
 ```
+
+**Examples of paths matched by `/api/{proxy+}`:**
+
+- `/api/users` → `pathParameters.proxy = "users"`
+- `/api/users/123` → `pathParameters.proxy = "users/123"`
+- `/api/users/123/posts` → `pathParameters.proxy = "users/123/posts"`
+- `/api/v1/accounts` → `pathParameters.proxy = "v1/accounts"`
+
+**Complex proxy patterns also work:**
+
+```yaml
+events:
+  - type: http
+    method: GET
+    path: /v1/{id}/items/{proxy+}
+```
+
+For the path `/v1/user123/items/categories/tech`:
+
+- `pathParameters.id = "user123"`
+- `pathParameters.proxy = "categories/tech"`
 
 ### Functions Without Events
 

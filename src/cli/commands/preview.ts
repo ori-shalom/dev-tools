@@ -2,10 +2,7 @@ import { Command } from 'commander';
 import { resolve, join } from 'path';
 import { existsSync } from 'fs';
 import { ConfigParser } from '../../config/parser.js';
-import { HttpServer } from '../../server/http-server.js';
-import { LambdaWebSocketServer } from '../../server/websocket-server.js';
-import { ManagementServer } from '../../server/management-server.js';
-import { ConsoleMessages } from '../../utils/console.js';
+import { NativeUnifiedServer } from '../../server/native-unified-server.js';
 
 export function createPreviewCommand(): Command {
   const command = new Command('preview');
@@ -81,41 +78,48 @@ async function runPreviewCommand(options: PreviewOptions): Promise<void> {
       dispose: () => {},
     };
 
-    // Parse ports
-    const httpPort = parseInt(options.port);
-    const wsPort = parseInt(options.wsPort);
-    const mgmtPort = parseInt(options.mgmtPort);
+    // Parse port (unified server handles HTTP, WebSocket, and Management on same port)
+    const port = parseInt(options.port);
 
-    // Initialize servers without file watching
-    const httpServer = new HttpServer({
+    // Initialize unified server without file watching
+    const server = new NativeUnifiedServer({
       config,
       loadHandler: (path: string) => handlerLoader.loadHandler(path),
     });
-    const wsServer = new LambdaWebSocketServer({
-      config,
-      loadHandler: (path: string) => handlerLoader.loadHandler(path),
-    });
-    const mgmtServer = new ManagementServer({
-      websocketServer: wsServer,
-      port: mgmtPort,
-      host: '0.0.0.0',
-    });
 
-    await httpServer.start(httpPort, '0.0.0.0');
-    await wsServer.start(wsPort, '0.0.0.0');
-    await mgmtServer.start();
+    await server.start(port, '0.0.0.0');
 
-    ConsoleMessages.printStartupMessage(config, httpPort, wsPort, mgmtPort);
+    console.log('\n🚀 Preview server is running!');
+    console.log(`📄 Configuration: ${configPath}`);
+    console.log(`🌐 HTTP server: http://0.0.0.0:${port}`);
+    console.log(`🔌 WebSocket server: ws://0.0.0.0:${port}`);
+    console.log(`⚙️  Management API: http://0.0.0.0:${port}/_dev`);
     console.log('\n📦 Preview Mode: Serving built artifacts from', buildDir);
     console.log('   (No hot reload - restart to see changes)');
 
+    console.log('\nLambda functions:');
+    Object.entries(config.functions).forEach(([name, func]) => {
+      console.log(`  📦 ${name}: ${func.handler}`);
+      if (func.events && func.events.length > 0) {
+        func.events.forEach((event) => {
+          if (event.type === 'http') {
+            console.log(`    - HTTP ${event.method} ${event.path}`);
+          } else if (event.type === 'websocket') {
+            console.log(`    - WebSocket ${event.route}`);
+          }
+        });
+      } else {
+        console.log('    - No events (programmatically invoked)');
+      }
+    });
+
+    console.log('\nPress Ctrl+C to stop the server');
+
     // Handle graceful shutdown
     const shutdown = async () => {
-      console.log('\n\nShutting down preview servers...');
-      await httpServer.stop();
-      await wsServer.stop();
-      await mgmtServer.stop();
-      console.log('Preview servers stopped.');
+      console.log('\n🛑 Shutting down preview server...');
+      await server.stop();
+      console.log('✅ Preview server stopped successfully');
       process.exit(0);
     };
 

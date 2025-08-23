@@ -2,9 +2,7 @@ import { Command } from 'commander';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { ConfigParser } from '../../config/parser.js';
-import { HttpServer } from '../../server/http-server.js';
-import { LambdaWebSocketServer } from '../../server/websocket-server.js';
-import { ManagementServer } from '../../server/management-server.js';
+import { NativeUnifiedServer } from '../../server/native-unified-server.js';
 import { HandlerLoader } from '../../utils/handler-loader.js';
 import { FileWatcher } from '../../utils/file-watcher.js';
 import { HttpHandler, WebSocketHandler } from '../../types/aws-lambda.js';
@@ -15,8 +13,7 @@ export function createDevCommand(): Command {
   command
     .description('Start local development server')
     .option('-c, --config <path>', 'Configuration file path', 'dev-tools.yaml')
-    .option('-p, --port <port>', 'HTTP server port', '3000')
-    .option('-w, --websocket-port <port>', 'WebSocket server port', '3001')
+    .option('-p, --port <port>', 'Server port', '3000')
     .option('--no-watch', 'Disable file watching')
     .option('--debug-workspace', 'Enable verbose workspace detection logging')
     .option('--trace-imports', 'Trace complete import resolution process')
@@ -33,7 +30,6 @@ export function createDevCommand(): Command {
 type DevOptions = {
   config: string;
   port?: string;
-  websocketPort?: string;
   watch: boolean;
   debugWorkspace?: boolean;
   traceImports?: boolean;
@@ -56,13 +52,9 @@ async function runDevServer(options: DevOptions): Promise<void> {
     console.log(`Loading configuration from: ${configPath}`);
     const config = ConfigParser.parseFile(configPath);
 
-    // Override ports from CLI options
+    // Override port from CLI option
     if (options.port) {
       config.server.port = parseInt(options.port, 10);
-    }
-    if (options.websocketPort) {
-      config.server.websocket = config.server.websocket || {};
-      config.server.websocket.port = parseInt(options.websocketPort, 10);
     }
 
     console.log(`Starting development server for service: ${config.service}`);
@@ -87,23 +79,11 @@ async function runDevServer(options: DevOptions): Promise<void> {
     // Initialize handler loader with debug options
     const handlerLoader = new HandlerLoader(debugOptions);
 
-    // Initialize servers
-    const httpServer = new HttpServer({
+    // Initialize unified server
+    const server = new NativeUnifiedServer({
       config,
       loadHandler: (handlerPath: string) =>
-        handlerLoader.loadHandler(handlerPath, process.cwd()) as Promise<HttpHandler>,
-    });
-
-    const websocketServer = new LambdaWebSocketServer({
-      config,
-      loadHandler: (handlerPath: string) =>
-        handlerLoader.loadHandler(handlerPath, process.cwd()) as Promise<WebSocketHandler>,
-    });
-
-    const managementServer = new ManagementServer({
-      websocketServer,
-      port: (config.server.websocket?.port || config.server.port + 1) + 1, // Management port is WebSocket port + 1
-      host: config.server.host,
+        handlerLoader.loadHandler(handlerPath, process.cwd()) as Promise<HttpHandler | WebSocketHandler>,
     });
 
     // Set up file watching for hot reload
@@ -128,22 +108,14 @@ async function runDevServer(options: DevOptions): Promise<void> {
       console.log('File watching enabled for hot reload');
     }
 
-    // Start servers
-    await Promise.all([
-      httpServer.start(config.server.port, config.server.host),
-      websocketServer.start(config.server.websocket?.port || config.server.port + 1, config.server.host),
-      managementServer.start(),
-    ]);
+    // Start unified server
+    await server.start(config.server.port, config.server.host);
 
     console.log('\n🚀 Development server is running!');
     console.log(`📄 Configuration: ${configPath}`);
     console.log(`🌐 HTTP server: http://${config.server.host}:${config.server.port}`);
-    console.log(
-      `🔌 WebSocket server: ws://${config.server.host}:${config.server.websocket?.port || config.server.port + 1}`,
-    );
-    console.log(
-      `⚙️  Management API: http://${config.server.host}:${(config.server.websocket?.port || config.server.port + 1) + 1}`,
-    );
+    console.log(`🔌 WebSocket server: ws://${config.server.host}:${config.server.port}`);
+    console.log(`⚙️  Management API: http://${config.server.host}:${config.server.port}/_dev`);
     console.log(`🔄 Hot reload: ${options.watch !== false ? 'enabled' : 'disabled'}`);
 
     console.log('\nLambda functions:');
@@ -169,7 +141,7 @@ async function runDevServer(options: DevOptions): Promise<void> {
       console.log('\n🛑 Shutting down servers...');
 
       try {
-        await Promise.all([httpServer.stop(), websocketServer.stop(), managementServer.stop()]);
+        await server.stop();
 
         if (fileWatcher) {
           fileWatcher.stop();

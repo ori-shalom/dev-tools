@@ -11,22 +11,8 @@ vi.mock('../../config/parser.js', () => ({
   },
 }));
 
-vi.mock('../../server/http-server.js', () => ({
-  HttpServer: vi.fn().mockImplementation(() => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-  })),
-}));
-
-vi.mock('../../server/websocket-server.js', () => ({
-  LambdaWebSocketServer: vi.fn().mockImplementation(() => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-  })),
-}));
-
-vi.mock('../../server/management-server.js', () => ({
-  ManagementServer: vi.fn().mockImplementation(() => ({
+vi.mock('../../server/native-unified-server.js', () => ({
+  NativeUnifiedServer: vi.fn().mockImplementation(() => ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
   })),
@@ -296,9 +282,7 @@ describe('Preview Command', () => {
 
     it('should initialize servers with correct configuration', async () => {
       const { ConfigParser } = await import('../../config/parser.js');
-      const { HttpServer } = await import('../../server/http-server.js');
-      const { LambdaWebSocketServer } = await import('../../server/websocket-server.js');
-      const { ManagementServer } = await import('../../server/management-server.js');
+      const { NativeUnifiedServer } = await import('../../server/native-unified-server.js');
 
       // Create config file and build directory
       writeFileSync(configPath, 'service: test');
@@ -316,23 +300,13 @@ describe('Preview Command', () => {
         },
       };
 
-      const mockHttpServer = {
-        start: vi.fn().mockResolvedValue(undefined),
-        stop: vi.fn().mockResolvedValue(undefined),
-      };
-      const mockWsServer = {
-        start: vi.fn().mockResolvedValue(undefined),
-        stop: vi.fn().mockResolvedValue(undefined),
-      };
-      const mockMgmtServer = {
+      const mockUnifiedServer = {
         start: vi.fn().mockResolvedValue(undefined),
         stop: vi.fn().mockResolvedValue(undefined),
       };
 
       (ConfigParser.parseFile as any).mockReturnValue(mockConfig);
-      (HttpServer as any).mockImplementation(() => mockHttpServer);
-      (LambdaWebSocketServer as any).mockImplementation(() => mockWsServer);
-      (ManagementServer as any).mockImplementation(() => mockMgmtServer);
+      (NativeUnifiedServer as any).mockImplementation(() => mockUnifiedServer);
 
       const command = createPreviewCommand();
 
@@ -346,22 +320,16 @@ describe('Preview Command', () => {
         buildDir,
         '--port',
         '4000',
-        '--ws-port',
-        '4001',
-        '--mgmt-port',
-        '4002',
       ]);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      expect(mockHttpServer.start).toHaveBeenCalledWith(4000, '0.0.0.0');
-      expect(mockWsServer.start).toHaveBeenCalledWith(4001, '0.0.0.0');
-      expect(mockMgmtServer.start).toHaveBeenCalled();
+      expect(mockUnifiedServer.start).toHaveBeenCalledWith(4000, '0.0.0.0');
     });
 
     it('should handle server initialization failure', async () => {
       const { ConfigParser } = await import('../../config/parser.js');
-      const { HttpServer } = await import('../../server/http-server.js');
+      const { NativeUnifiedServer } = await import('../../server/native-unified-server.js');
 
       // Create config file and build directory
       writeFileSync(configPath, 'service: test');
@@ -372,13 +340,13 @@ describe('Preview Command', () => {
         functions: {},
       };
 
-      const mockHttpServer = {
+      const mockUnifiedServer = {
         start: vi.fn().mockRejectedValue(new Error('Port already in use')),
         stop: vi.fn().mockResolvedValue(undefined),
       };
 
       (ConfigParser.parseFile as any).mockReturnValue(mockConfig);
-      (HttpServer as any).mockImplementation(() => mockHttpServer);
+      (NativeUnifiedServer as any).mockImplementation(() => mockUnifiedServer);
 
       const command = createPreviewCommand();
 

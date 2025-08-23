@@ -127,7 +127,6 @@
         "host": "localhost",
         "cors": true,
         "websocket": {
-          "port": 3001,
           "pingInterval": 30000
         }
       },
@@ -152,18 +151,10 @@
         },
         "websocket": {
           "default": {
-            "port": 3001,
             "pingInterval": 30000
           },
           "type": "object",
           "properties": {
-            "port": {
-              "description": "WebSocket server port",
-              "default": 3001,
-              "type": "number",
-              "minimum": 1000,
-              "maximum": 65535
-            },
             "pingInterval": {
               "description": "WebSocket ping interval in ms",
               "default": 30000,

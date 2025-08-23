@@ -322,7 +322,6 @@ server:
   host: 0.0.0.0
   cors: false
   websocket:
-    port: 4001
     pingInterval: 60000
 
 build:
@@ -361,7 +360,7 @@ build:
       expect(result.server.port).toBe(4000);
       expect(result.server.host).toBe('0.0.0.0');
       expect(result.server.cors).toBe(false);
-      expect(result.server.websocket.port).toBe(4001);
+      expect(result.server.websocket.pingInterval).toBe(60000);
 
       // Build config
       expect(result.build.outDir).toBe('./build');

@@ -1,10 +1,19 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EventTransformer } from './event-transformer.js';
-import { Request } from 'express';
 import { IncomingMessage } from 'http';
 import { HttpEvent } from '../config/schema.js';
 
-// Mock Express Request
+// Mock Express-like Request (for backward compatibility in tests)
+type RequestLike = {
+  method: string;
+  path: string;
+  headers: Record<string, string | string[]>;
+  query: Record<string, string | string[]>;
+  body?: unknown;
+  ip?: string;
+  get?: (header: string) => string | undefined;
+};
+
 const createMockRequest = (options: {
   method?: string;
   path?: string;
@@ -12,21 +21,33 @@ const createMockRequest = (options: {
   query?: Record<string, string | string[]>;
   body?: unknown;
   ip?: string;
-}): Request =>
+}): RequestLike => ({
+  method: options.method || 'GET',
+  path: options.path || '/',
+  headers: options.headers || {},
+  query: options.query || {},
+  body: options.body,
+  ip: options.ip || '127.0.0.1',
+  get: vi.fn((header: string) => {
+    if (header === 'User-Agent') {
+      return options.headers?.['user-agent'] || options.headers?.['User-Agent'];
+    }
+    return options.headers?.[header] || options.headers?.[header.toLowerCase()];
+  }),
+});
+
+// Mock Node.js IncomingMessage
+const createMockIncomingMessage = (options: {
+  method?: string;
+  url?: string;
+  headers?: Record<string, string | string[]>;
+}): IncomingMessage =>
   ({
     method: options.method || 'GET',
-    path: options.path || '/',
+    url: options.url || '/',
     headers: options.headers || {},
-    query: options.query || {},
-    body: options.body,
-    ip: options.ip || '127.0.0.1',
-    get: vi.fn((header: string) => {
-      if (header === 'User-Agent') {
-        return options.headers?.['user-agent'] || options.headers?.['User-Agent'];
-      }
-      return options.headers?.[header] || options.headers?.[header.toLowerCase()];
-    }),
-  }) as unknown as Request;
+    socket: { remoteAddress: '127.0.0.1' },
+  }) as unknown as IncomingMessage;
 
 describe('EventTransformer', () => {
   describe('toHttpEvent', () => {

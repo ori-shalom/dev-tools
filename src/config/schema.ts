@@ -40,7 +40,6 @@ const LambdaFunctionSchema = z.object({
 });
 
 const WebSocketConfigSchema = z.object({
-  port: z.number().min(1000).max(65535).optional().default(3001).describe('WebSocket server port'),
   pingInterval: z.number().min(1000).optional().default(30000).describe('WebSocket ping interval in ms'),
 });
 

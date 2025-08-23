@@ -32,7 +32,6 @@ describe('ConfigSchema', () => {
           host: 'localhost',
           cors: true,
           websocket: {
-            port: 3001,
             pingInterval: 30000,
           },
         },
@@ -158,7 +157,6 @@ describe('ConfigSchema', () => {
           host: '0.0.0.0',
           cors: false,
           websocket: {
-            port: 4001,
             pingInterval: 60000,
           },
         },
@@ -170,7 +168,6 @@ describe('ConfigSchema', () => {
         host: '0.0.0.0',
         cors: false,
         websocket: {
-          port: 4001,
           pingInterval: 60000,
         },
       });

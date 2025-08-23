@@ -11,22 +11,8 @@ vi.mock('../../config/parser.js', () => ({
   },
 }));
 
-vi.mock('../../server/http-server.js', () => ({
-  HttpServer: vi.fn().mockImplementation(() => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-  })),
-}));
-
-vi.mock('../../server/websocket-server.js', () => ({
-  LambdaWebSocketServer: vi.fn().mockImplementation(() => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-  })),
-}));
-
-vi.mock('../../server/management-server.js', () => ({
-  ManagementServer: vi.fn().mockImplementation(() => ({
+vi.mock('../../server/native-unified-server.js', () => ({
+  NativeUnifiedServer: vi.fn().mockImplementation(() => ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
   })),
@@ -104,12 +90,11 @@ describe('Dev Command', () => {
       const command = createDevCommand();
       const options = command.options;
 
-      expect(options).toHaveLength(9);
+      expect(options).toHaveLength(8);
 
       const optionFlags = options.map((opt) => opt.flags);
       expect(optionFlags).toContain('-c, --config <path>');
       expect(optionFlags).toContain('-p, --port <port>');
-      expect(optionFlags).toContain('-w, --websocket-port <port>');
       expect(optionFlags).toContain('--no-watch');
       expect(optionFlags).toContain('--debug-workspace');
       expect(optionFlags).toContain('--trace-imports');
@@ -122,11 +107,8 @@ describe('Dev Command', () => {
       const command = createDevCommand();
       const configOption = command.options.find((opt) => opt.flags === '-c, --config <path>');
       const portOption = command.options.find((opt) => opt.flags === '-p, --port <port>');
-      const wsPortOption = command.options.find((opt) => opt.flags === '-w, --websocket-port <port>');
-
       expect(configOption?.defaultValue).toBe('dev-tools.yaml');
       expect(portOption?.defaultValue).toBe('3000');
-      expect(wsPortOption?.defaultValue).toBe('3001');
     });
   });
 
@@ -144,9 +126,7 @@ describe('Dev Command', () => {
 
     it('should start development servers with default configuration', async () => {
       const { ConfigParser } = await import('../../config/parser.js');
-      const { HttpServer } = await import('../../server/http-server.js');
-      const { LambdaWebSocketServer } = await import('../../server/websocket-server.js');
-      const { ManagementServer } = await import('../../server/management-server.js');
+      const { NativeUnifiedServer } = await import('../../server/native-unified-server.js');
 
       writeFileSync(configPath, 'service: test');
 
@@ -171,7 +151,7 @@ describe('Dev Command', () => {
           host: 'localhost',
           cors: true,
           websocket: {
-            port: 3001,
+            pingInterval: 30000,
           },
         },
         build: {
@@ -188,9 +168,7 @@ describe('Dev Command', () => {
       await command.parseAsync(['node', 'test', '--config', configPath]);
 
       expect(ConfigParser.parseFile).toHaveBeenCalledWith(configPath);
-      expect(HttpServer).toHaveBeenCalled();
-      expect(LambdaWebSocketServer).toHaveBeenCalled();
-      expect(ManagementServer).toHaveBeenCalled();
+      expect(NativeUnifiedServer).toHaveBeenCalled();
 
       const allLogCalls = consoleLogSpy.mock.calls.map((call) => call[0]).join(' ');
       expect(allLogCalls).toContain(`Loading configuration from: ${configPath}`);
@@ -200,7 +178,6 @@ describe('Dev Command', () => {
 
     it('should override ports from CLI options', async () => {
       const { ConfigParser } = await import('../../config/parser.js');
-      const { HttpServer } = await import('../../server/http-server.js');
 
       writeFileSync(configPath, 'service: test');
 
@@ -212,7 +189,7 @@ describe('Dev Command', () => {
           host: 'localhost',
           cors: true,
           websocket: {
-            port: 3001,
+            pingInterval: 30000,
           },
         },
         build: {
@@ -226,14 +203,14 @@ describe('Dev Command', () => {
       (ConfigParser.parseFile as any).mockReturnValue(mockConfig);
 
       const command = createDevCommand();
-      await command.parseAsync(['node', 'test', '--port', '8080', '--websocket-port', '8081']);
+      await command.parseAsync(['node', 'test', '--port', '8080']);
 
       expect(mockConfig.server.port).toBe(8080);
-      expect(mockConfig.server.websocket.port).toBe(8081);
     });
 
-    it('should create websocket config when not present and websocket-port is specified', async () => {
+    it('should use unified server on single port', async () => {
       const { ConfigParser } = await import('../../config/parser.js');
+      const { NativeUnifiedServer } = await import('../../server/native-unified-server.js');
 
       writeFileSync(configPath, 'service: test');
 
@@ -244,7 +221,6 @@ describe('Dev Command', () => {
           port: 3000,
           host: 'localhost',
           cors: true,
-          // No websocket config initially
         },
         build: {
           outDir: './dist',
@@ -257,9 +233,9 @@ describe('Dev Command', () => {
       (ConfigParser.parseFile as any).mockReturnValue(mockConfig);
 
       const command = createDevCommand();
-      await command.parseAsync(['node', 'test', '--websocket-port', '9001']);
+      await command.parseAsync(['node', 'test']);
 
-      expect(mockConfig.server.websocket).toEqual({ port: 9001 });
+      expect(NativeUnifiedServer).toHaveBeenCalled();
     });
 
     it('should setup file watching when --no-watch is not used', async () => {
@@ -488,8 +464,8 @@ describe('Dev Command', () => {
 
       const allLogCalls = consoleLogSpy.mock.calls.map((call) => call[0]).join(' ');
       expect(allLogCalls).toContain('🌐 HTTP server: http://0.0.0.0:3000');
-      expect(allLogCalls).toContain('🔌 WebSocket server: ws://0.0.0.0:3001');
-      expect(allLogCalls).toContain('⚙️  Management API: http://0.0.0.0:3002');
+      expect(allLogCalls).toContain('🔌 WebSocket server: ws://0.0.0.0:3000');
+      expect(allLogCalls).toContain('⚙️  Management API: http://0.0.0.0:3000/_dev');
     });
 
     it('should use CLI default ports even with different config values', async () => {
@@ -518,13 +494,13 @@ describe('Dev Command', () => {
       await command.parseAsync(['node', 'test']);
 
       const allLogCalls = consoleLogSpy.mock.calls.map((call) => call[0]).join(' ');
-      expect(allLogCalls).toContain('🔌 WebSocket server: ws://localhost:3001');
-      expect(allLogCalls).toContain('⚙️  Management API: http://localhost:3002');
+      expect(allLogCalls).toContain('🔌 WebSocket server: ws://localhost:3000');
+      expect(allLogCalls).toContain('⚙️  Management API: http://localhost:3000/_dev');
     });
 
     it('should handle server startup errors', async () => {
       const { ConfigParser } = await import('../../config/parser.js');
-      const { HttpServer } = await import('../../server/http-server.js');
+      const { NativeUnifiedServer } = await import('../../server/native-unified-server.js');
 
       writeFileSync(configPath, 'service: test');
 
@@ -545,7 +521,7 @@ describe('Dev Command', () => {
       };
 
       (ConfigParser.parseFile as any).mockReturnValue(mockConfig);
-      (HttpServer as any).mockImplementation(() => ({
+      (NativeUnifiedServer as any).mockImplementation(() => ({
         start: vi.fn().mockRejectedValue(new Error('Port already in use')),
         stop: vi.fn().mockResolvedValue(undefined),
       }));
@@ -559,7 +535,7 @@ describe('Dev Command', () => {
 
     it('should handle non-Error exceptions', async () => {
       const { ConfigParser } = await import('../../config/parser.js');
-      const { HttpServer } = await import('../../server/http-server.js');
+      const { NativeUnifiedServer } = await import('../../server/native-unified-server.js');
 
       writeFileSync(configPath, 'service: test');
 
@@ -580,7 +556,7 @@ describe('Dev Command', () => {
       };
 
       (ConfigParser.parseFile as any).mockReturnValue(mockConfig);
-      (HttpServer as any).mockImplementation(() => ({
+      (NativeUnifiedServer as any).mockImplementation(() => ({
         start: vi.fn().mockRejectedValue('String error'),
         stop: vi.fn().mockResolvedValue(undefined),
       }));
