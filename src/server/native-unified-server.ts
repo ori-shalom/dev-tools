@@ -82,9 +82,9 @@ export class NativeUnifiedServer {
           return;
         }
 
-        // Handle management API endpoints
-        if (pathname.startsWith('/_dev/')) {
-          await this.handleManagementRequest(req, res, pathname);
+        // Handle AWS-compatible @connections API endpoints
+        if (pathname.startsWith('/@connections')) {
+          await this.handleConnectionsAPI(req, res, pathname);
           return;
         }
 
@@ -116,10 +116,11 @@ export class NativeUnifiedServer {
     });
   }
 
-  private async handleManagementRequest(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
-    // Management API for WebSocket connections
-    if (pathname === '/_dev/connections' && req.method === 'GET') {
-      // List all connections
+  private async handleConnectionsAPI(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
+    // AWS-compatible @connections API for WebSocket management
+
+    // GET /@connections - List all connections (development extension)
+    if (pathname === '/@connections' && req.method === 'GET') {
       const connections = Array.from(this.connections.entries()).map(([id, info]) => ({
         connectionId: id,
         connectedAt: new Date(info.context.connectedAt).toISOString(),
@@ -129,40 +130,62 @@ export class NativeUnifiedServer {
       return;
     }
 
-    const sendMatch = pathname.match(/^\/_dev\/connections\/([^/]+)\/send$/);
-    if (sendMatch && req.method === 'POST') {
-      // Send message to specific connection
-      const connectionId = sendMatch[1];
-      const body = await this.readRequestBody(req);
-
+    // POST /@connections/{connectionId} - Send message to specific connection (AWS compatible)
+    const connectionMatch = pathname.match(/^\/@connections\/([^/]+)$/);
+    if (connectionMatch && req.method === 'POST') {
+      const connectionId = connectionMatch[1];
       const connection = this.connections.get(connectionId);
+
       if (!connection) {
-        this.sendJsonResponse(res, 404, { message: 'Connection not found' });
+        this.sendJsonResponse(res, 410, { message: 'Connection not found' }); // 410 Gone like AWS
         return;
       }
 
+      const body = await this.readRequestBody(req);
       connection.ws.send(body.toString());
-      this.sendJsonResponse(res, 200, { message: 'Message sent' });
+
+      // AWS returns 200 with no body for successful post-to-connection
+      res.statusCode = 200;
+      res.end();
       return;
     }
 
-    if (pathname === '/_dev/connections/broadcast' && req.method === 'POST') {
-      // Broadcast to all connections
-      const body = await this.readRequestBody(req);
-      const message = body.toString();
+    // GET /@connections/{connectionId} - Check connection status (AWS compatible)
+    if (connectionMatch && req.method === 'GET') {
+      const connectionId = connectionMatch[1];
+      const connection = this.connections.get(connectionId);
 
-      this.connections.forEach((connection) => {
-        connection.ws.send(message);
-      });
+      if (!connection) {
+        this.sendJsonResponse(res, 410, { message: 'Connection not found' });
+        return;
+      }
 
       this.sendJsonResponse(res, 200, {
-        message: 'Broadcast sent',
-        connectionCount: this.connections.size,
+        connectionId: connectionId,
+        connectedAt: new Date(connection.context.connectedAt).toISOString(),
       });
       return;
     }
 
-    this.sendJsonResponse(res, 404, { message: 'Management endpoint not found' });
+    // DELETE /@connections/{connectionId} - Disconnect connection (AWS compatible)
+    if (connectionMatch && req.method === 'DELETE') {
+      const connectionId = connectionMatch[1];
+      const connection = this.connections.get(connectionId);
+
+      if (!connection) {
+        this.sendJsonResponse(res, 410, { message: 'Connection not found' });
+        return;
+      }
+
+      connection.ws.close();
+      this.connections.delete(connectionId);
+
+      res.statusCode = 204; // No content like AWS
+      res.end();
+      return;
+    }
+
+    this.sendJsonResponse(res, 404, { message: 'Connections API endpoint not found' });
   }
 
   private setupWebSocketHandlers(): void {

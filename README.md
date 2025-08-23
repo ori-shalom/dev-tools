@@ -8,6 +8,7 @@ A lightweight AWS Lambda local development and packaging tool for TypeScript pro
 - 🔐 **No AWS Required** - No AWS credentials, accounts, or intrusive setup needed
 - 🔄 **Hot Reload** - Automatic code reloading during development
 - 🌐 **Full API Gateway Simulation** - HTTP and WebSocket events work just like in AWS
+- 🎯 **Unified Server Architecture** - Single port serves HTTP, WebSocket, and Management API (just like AWS API Gateway)
 - 📦 **Simple Packaging** - Build and zip functions when you're ready to deploy
 - 🔧 **TypeScript First** - Full TypeScript support with proper type definitions
 - ⚡ **Lightning Fast** - Powered by esbuild for instant builds
@@ -49,8 +50,8 @@ dt dev
 Your functions are now available at:
 
 - HTTP: http://localhost:3000
-- WebSocket: ws://localhost:3001
-- @connections: http://localhost:3002 (send messages to WebSocket clients)
+- WebSocket: ws://localhost:3000
+- WebSocket @connections API: http://localhost:3000/@connections (AWS-compatible)
 
 ### Build Functions
 
@@ -133,7 +134,6 @@ server:
   host: localhost
   cors: true
   websocket:
-    port: 3001
     pingInterval: 30000
 
 build:
@@ -224,23 +224,24 @@ export async function handler(event: WebSocketEvent, context: LambdaContext): Pr
 
 Code changes are automatically detected and handlers are reloaded without restarting the server.
 
-### Local @connections Endpoint
+### AWS-Compatible @connections API
 
-Send messages to connected WebSocket clients during development (simulates AWS's @connections API):
+Manage WebSocket connections using AWS API Gateway-compatible endpoints:
 
 ```bash
 # Send to specific connection
-curl -X POST http://localhost:3001/connections/{connectionId}/send \
+curl -X POST http://localhost:3000/@connections/{connectionId} \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello from server"}'
 
-# Broadcast to all connections
-curl -X POST http://localhost:3001/connections/broadcast \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Hello everyone"}'
+# Check connection status
+curl -X GET http://localhost:3000/@connections/{connectionId}
 
-# List active connections
-curl http://localhost:3001/connections
+# Disconnect connection
+curl -X DELETE http://localhost:3000/@connections/{connectionId}
+
+# List active connections (development extension)
+curl http://localhost:3000/@connections
 ```
 
 ## CLI Commands
@@ -262,7 +263,6 @@ Options:
 
 - `--config <path>` - Configuration file path (default: "dev-tools.yaml")
 - `--port <port>` - HTTP server port (default: 3000)
-- `--websocket-port <port>` - WebSocket server port (default: 3001)
 - `--no-watch` - Disable file watching
 
 ### `dt build`
@@ -284,8 +284,6 @@ Options:
 
 - `--config <path>` - Configuration file path (default: "dev-tools.yaml")
 - `--port <port>` - HTTP server port (default: 3000)
-- `--ws-port <port>` - WebSocket server port (default: 3001)
-- `--mgmt-port <port>` - Management server port (default: 3002)
 - `--build-dir <path>` - Build output directory (default: "lambda-build")
 
 ### `dt package`
@@ -347,12 +345,11 @@ functions:
 
 ```yaml
 server:
-  port: 3000 # HTTP server port
+  port: 3000 # Unified server port (HTTP + WebSocket + Management API)
   host: localhost # Server host
   cors: true # Enable CORS globally
   websocket:
-    port: 3001 # WebSocket server port
-    pingInterval: 30000 # Ping interval in milliseconds
+    pingInterval: 30000 # WebSocket ping interval in milliseconds
 ```
 
 ### HTTP Method Support

@@ -115,7 +115,7 @@ async function runDevServer(options: DevOptions): Promise<void> {
     console.log(`📄 Configuration: ${configPath}`);
     console.log(`🌐 HTTP server: http://${config.server.host}:${config.server.port}`);
     console.log(`🔌 WebSocket server: ws://${config.server.host}:${config.server.port}`);
-    console.log(`⚙️  Management API: http://${config.server.host}:${config.server.port}/_dev`);
+    console.log(`⚙️  @connections API: http://${config.server.host}:${config.server.port}/@connections`);
     console.log(`🔄 Hot reload: ${options.watch !== false ? 'enabled' : 'disabled'}`);
 
     console.log('\nLambda functions:');

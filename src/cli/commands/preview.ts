@@ -93,7 +93,7 @@ async function runPreviewCommand(options: PreviewOptions): Promise<void> {
     console.log(`📄 Configuration: ${configPath}`);
     console.log(`🌐 HTTP server: http://0.0.0.0:${port}`);
     console.log(`🔌 WebSocket server: ws://0.0.0.0:${port}`);
-    console.log(`⚙️  Management API: http://0.0.0.0:${port}/_dev`);
+    console.log(`⚙️  @connections API: http://0.0.0.0:${port}/@connections`);
     console.log('\n📦 Preview Mode: Serving built artifacts from', buildDir);
     console.log('   (No hot reload - restart to see changes)');
 

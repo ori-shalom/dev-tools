@@ -465,7 +465,7 @@ describe('Dev Command', () => {
       const allLogCalls = consoleLogSpy.mock.calls.map((call) => call[0]).join(' ');
       expect(allLogCalls).toContain('🌐 HTTP server: http://0.0.0.0:3000');
       expect(allLogCalls).toContain('🔌 WebSocket server: ws://0.0.0.0:3000');
-      expect(allLogCalls).toContain('⚙️  Management API: http://0.0.0.0:3000/_dev');
+      expect(allLogCalls).toContain('⚙️  @connections API: http://0.0.0.0:3000/@connections');
     });
 
     it('should use CLI default ports even with different config values', async () => {
@@ -495,7 +495,7 @@ describe('Dev Command', () => {
 
       const allLogCalls = consoleLogSpy.mock.calls.map((call) => call[0]).join(' ');
       expect(allLogCalls).toContain('🔌 WebSocket server: ws://localhost:3000');
-      expect(allLogCalls).toContain('⚙️  Management API: http://localhost:3000/_dev');
+      expect(allLogCalls).toContain('⚙️  @connections API: http://localhost:3000/@connections');
     });
 
     it('should handle server startup errors', async () => {
