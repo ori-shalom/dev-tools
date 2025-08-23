@@ -266,8 +266,15 @@ export class NativeUnifiedServer {
         // Load the Lambda handler
         const lambdaHandler = (await this.options.loadHandler(functionConfig.handler)) as WebSocketHandler;
 
-        // Transform to Lambda event
-        const lambdaEvent = EventTransformer.toWebSocketEvent(body || '', connectionId, routeKey);
+        // Transform to Lambda event with correct eventType mapping
+        let eventType: 'CONNECT' | 'MESSAGE' | 'DISCONNECT' = 'MESSAGE';
+        if (routeKey === '$connect') {
+          eventType = 'CONNECT';
+        } else if (routeKey === '$disconnect') {
+          eventType = 'DISCONNECT';
+        }
+
+        const lambdaEvent = EventTransformer.toWebSocketEvent(body || '', connectionId, routeKey, eventType);
 
         // Create Lambda context
         const context = createLambdaContext(
